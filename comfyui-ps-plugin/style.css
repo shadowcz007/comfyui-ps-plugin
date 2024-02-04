@@ -12,3 +12,28 @@ body {
     border-radius: 4px;
     padding: 16px;
   }
+
+  .card{
+    margin-top: 18px;
+  }
+
+  textarea{
+    height: 100px;
+    margin: 0;
+    margin-top: 12px;
+  }
+
+  button{
+    margin: 0;
+    margin-top: 24px;
+    padding: 0;
+    width: 100%;
+    cursor: pointer;
+    height: 32px;
+  }
+  label{
+    margin-right: 12px;
+  }
+  select{
+    margin: 0;
+  }

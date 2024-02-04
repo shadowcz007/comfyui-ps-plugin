@@ -455,6 +455,12 @@ class ComfyApi extends EventTarget {
 }
 
 const { entrypoints } = require('uxp')
+const { localFileSystem: fs, fileTypes, formats } = require('uxp').storage
+const photoshop = require('photoshop').app
+// 当前的workflow
+window.app = null
+
+const hostUrl = 'http://127.0.0.1:8188'
 
 showAlert = () => {
   alert('This is an alert message')
@@ -537,6 +543,31 @@ function createTextInput (title, defaultValue) {
   return [uploadContainer, textInput]
 }
 
+// 数字输入
+function createNumberInput (title, defaultValue, opts) {
+  const { step, min, max } = opts
+
+  const div = document.createElement('div')
+  div.className = 'card'
+
+  // Create a label for the upload control
+  const nameLabel = document.createElement('label')
+  nameLabel.textContent = title
+  div.appendChild(nameLabel)
+
+  // Create an input field for the image name
+  const numInput = document.createElement('input')
+  numInput.type = 'number'
+  numInput.value = defaultValue
+  numInput.min = min || 0
+  numInput.max = max || 255
+  numInput.step = step || 1
+
+  div.appendChild(numInput)
+
+  return [div, numInput]
+}
+
 // 种子的处理
 function randomSeed (seed, data) {
   for (const id in data) {
@@ -609,38 +640,43 @@ function runMyApp (url, data) {
     })
 }
 
-async function writeImageData (url) {
-  
-  const photoshop = require('photoshop').app
+// 读取url里的图片，并粘贴到ps里
+async function downloadIt (link) {
+  const res = await fetch(link)
+  console.log(link)
 
-  // 通过URL获取图片数据
-  const response = await fetch(url)
+  try {
+    const img = await res.arrayBuffer()
+    const temp = await fs.getTemporaryFolder()
+    // const file = await fs.getFileForSaving("image.png");
+    let fileName = 'image.png'
+    const image = await temp.createFile(fileName, { overwrite: true })
+    // await image.delete()
 
-  // const blob = await response.blob() 
-  const arrayBuffer = await response.arrayBuffer()
- 
-  // 创建PhotoshopImageData实例
-  const imageData =
-    await require('photoshop').imaging.createImageDataFromBuffer(arrayBuffer, {
-      width: 512,
-      height: 512,
-      components: 4, // RGBA
-      colorSpace: 'RGB',
-      colorProfile: 'sRGB IEC61966-2.1'
-    })
-    console.log('writeImageData',imageData)
-  // 将图片数据写入图层
-  await require('photoshop').imaging.putPixels({
-    layerID: photoshop.activeDocument.activeLayers[0]._id, // 替换为目标图层的ID
-    imageData: imageData
-  })
+    await image.write(img, { format: formats.binary })
+
+    // await file.write(img);
+    const currentDocument = photoshop.activeDocument
+    // let newLayer = await currentDocument.layers.add();
+
+    const newDocument = await photoshop.open(image)
+    if (currentDocument) {
+      await newDocument.activeLayers[0].duplicate(currentDocument)
+      await newDocument.close()
+    }
+
+    // 删除
+    await image.delete()
+  } catch (e) {
+    console.log(e)
+  }
 }
 
 async function show (src, id, type = 'image') {
   console.log('#show', id, src)
 
   if (src && type == 'image') {
-    writeImageData(src)
+    await downloadIt(src)
   }
 
   if (src && (type == 'images' || type == 'images_prompts')) {
@@ -654,16 +690,76 @@ async function show (src, id, type = 'image') {
         prompt = v[1]
       }
 
-      writeImageData(url)
+      await downloadIt(url)
     }
   }
 }
 
+function createApp (apps, targetFilename, mainDom) {
+  window.app = apps.filter(ap => ap.filename === targetFilename)[0]
+  // console.log(app,api.clientId)
+  const app = window.app
+
+  mainDom.innerHTML = ''
+
+  // 输入和输出的ui创建
+  // 文本输入
+  for (let index = 0; index < app.input.length; index++) {
+    const inp = app.input[index]
+    if (inp.inputs?.text) {
+      const [div, textInput] = createTextInput(inp.title, inp.inputs.text)
+      mainDom.appendChild(div)
+      textInput.addEventListener('change', e => {
+        e.preventDefault()
+        // 更新文本
+        app.input[index].inputs.text = textInput.value
+      })
+    }
+  }
+
+  // 数字输入number
+  for (let index = 0; index < app.input.length; index++) {
+    const inp = app.input[index]
+    if (inp.inputs?.number) {
+      const [div, numInput] = createNumberInput(
+        inp.title,
+        inp.inputs.number,
+        inp.options
+      )
+      mainDom.appendChild(div)
+      numInput.addEventListener('change', e => {
+        e.preventDefault()
+        // 更新数字
+        app.input[index].inputs.number = numInput.value
+      })
+    }
+  }
+
+  // 运行按钮
+  const runBtn = document.createElement('button')
+  runBtn.innerText = 'RUN ' + `${api.clientId ? '+' : '-'}`
+  mainDom.appendChild(runBtn)
+
+  runBtn.addEventListener('click', e => {
+    e.preventDefault()
+    const seed = app.seed
+    let prompt = app.data
+
+    // seed 为 fixed 处理成random
+    for (const key in seed) {
+      if (seed[key] == 'fixed') seed[key] = 'randomize'
+    }
+
+    // 随机seed
+    prompt = randomSeed(seed, prompt)
+
+    const data = JSON.stringify({ prompt, client_id: api.clientId })
+    runMyApp(hostUrl, data)
+  })
+}
+
 async function showAppsNames () {
-  const hostUrl = 'http://127.0.0.1:8188'
-  const photoshop = require('photoshop').app
-  const activeDocument = photoshop.activeDocument
-  const { width, height } = activeDocument
+  // const { width, height } = photoshop.activeDocument
 
   const api = new ComfyApi()
 
@@ -756,8 +852,6 @@ async function showAppsNames () {
     }
   })
 
-  let app = {} //待运行的app
-
   const appDom = document.getElementById('apps')
   appDom.innerText = ''
   const mainDom = document.getElementById('main')
@@ -771,51 +865,12 @@ async function showAppsNames () {
   // 选择事件绑定
   selectElement.addEventListener('change', e => {
     e.preventDefault()
-
-    app = apps.filter(app => app.filename === selectElement.value)[0]
-    // console.log(app,api.clientId)
-
-    mainDom.innerHTML = ''
-
-    // 输入和输出的ui创建
-    // 文本输入
-    for (let index = 0; index < app.input.length; index++) {
-      const inp = app.input[index]
-      if (inp.inputs?.text) {
-        const [div, textInput] = createTextInput(inp.title, inp.inputs.text)
-        mainDom.appendChild(div)
-        textInput.addEventListener('change', e => {
-          e.preventDefault()
-          // 更新文本
-          app.input[index].inputs.text = textInput.value
-        })
-      }
-    }
-
-    // 运行按钮
-    const runBtn = document.createElement('button')
-    runBtn.innerText = 'RUN ' + `${api.clientId ? '+' : '-'}`
-    mainDom.appendChild(runBtn)
-
-    runBtn.addEventListener('click', e => {
-      e.preventDefault()
-      const seed = app.seed
-      let prompt = app.data
-
-      // seed 为 fixed 处理成random
-      for (const key in seed) {
-        if (seed[key] == 'fixed') seed[key] = 'randomize'
-      }
-
-      // 随机seed
-      prompt = randomSeed(seed, prompt)
-
-      const data = JSON.stringify({ prompt, client_id: api.clientId })
-      runMyApp(hostUrl, data)
-    })
+    createApp(apps, selectElement.value, mainDom)
   })
 
   appDom.appendChild(appsSelectDom)
+
+  createApp(apps, apps[0].filename, mainDom)
 
   // // 尺寸调整
   // const widthInput = document.createElement('input')
