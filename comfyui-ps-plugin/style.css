@@ -23,6 +23,13 @@ body {
     margin-top: 12px;
   }
 
+  input{
+   
+    margin: 0;
+    margin-top: 12px;
+  }
+
+
   button{
     margin: 0;
     margin-top: 24px;

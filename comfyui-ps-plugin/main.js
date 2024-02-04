@@ -544,8 +544,19 @@ function createTextInput (title, defaultValue) {
 }
 
 // 数字输入
-function createNumberInput (title, defaultValue, opts) {
+function createNumberSelectInput (title, defaultValue, opts) {
   const { step, min, max } = opts
+
+  // const [div, numInput] = createSelectWithOptions(
+  //   title,
+  //   Array.from(new Array((max - min) / step), (a, i) => {
+  //     return {
+  //       text: (i + 1) * step,
+  //       value: (i + 1) * step
+  //     }
+  //   }),
+  //   defaultValue
+  // )
 
   const div = document.createElement('div')
   div.className = 'card'
@@ -557,13 +568,22 @@ function createNumberInput (title, defaultValue, opts) {
 
   // Create an input field for the image name
   const numInput = document.createElement('input')
-  numInput.type = 'number'
+  numInput.type = 'range'
   numInput.value = defaultValue
   numInput.min = min || 0
   numInput.max = max || 255
-  numInput.step = step || 1
+  numInput.step = String(step || 1)
 
   div.appendChild(numInput)
+
+  const value=document.createElement('label');
+  value.innerText=defaultValue;
+
+  numInput.addEventListener('change',e=>{
+    value.innerText=numInput.value;
+  })
+
+  div.appendChild(value)
 
   return [div, numInput]
 }
@@ -712,7 +732,7 @@ function createApp (apps, targetFilename, mainDom) {
       textInput.addEventListener('change', e => {
         e.preventDefault()
         // 更新文本
-        app.input[index].inputs.text = textInput.value
+        app.data[inp.id].inputs.text = textInput.value
       })
     }
   }
@@ -721,7 +741,7 @@ function createApp (apps, targetFilename, mainDom) {
   for (let index = 0; index < app.input.length; index++) {
     const inp = app.input[index]
     if (inp.inputs?.number) {
-      const [div, numInput] = createNumberInput(
+      const [div, numInput] = createNumberSelectInput(
         inp.title,
         inp.inputs.number,
         inp.options
@@ -730,7 +750,9 @@ function createApp (apps, targetFilename, mainDom) {
       numInput.addEventListener('change', e => {
         e.preventDefault()
         // 更新数字
-        app.input[index].inputs.number = numInput.value
+        
+        app.data[inp.id].inputs.number = numInput.value
+        
       })
     }
   }
