@@ -42,3 +42,4 @@ Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](http
 > [discord](https://discord.gg/cXs9vZSqeK)
 
 > 关注微信公众号：mixlab 无界社区
+
