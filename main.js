@@ -462,14 +462,8 @@ window.app = null
 
 const hostUrl = 'http://127.0.0.1:8188'
 
-showAlert = () => {
-  alert('This is an alert message')
-}
 
 entrypoints.setup({
-  commands: {
-    showAlert
-  },
   panels: {
     vanilla: {
       show (node) {}
