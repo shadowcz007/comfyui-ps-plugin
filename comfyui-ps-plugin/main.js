@@ -1,3 +1,459 @@
+// comfyui API
+
+class ComfyApi extends EventTarget {
+  #registered = new Set()
+
+  constructor () {
+    super()
+    this.api_host = location.host
+    this.api_base = location.pathname.split('/').slice(0, -1).join('/')
+    this.protocol = location.protocol
+  }
+
+  apiURL (route) {
+    return this.api_base + route
+  }
+
+  fetchApi (route, options) {
+    if (!options) {
+      options = {}
+    }
+    if (!options.headers) {
+      options.headers = {}
+    }
+    options.headers['Comfy-User'] = this.user
+    return fetch(this.apiURL(route), options)
+  }
+
+  addEventListener (type, callback, options) {
+    super.addEventListener(type, callback, options)
+    this.#registered.add(type)
+  }
+
+  /**
+   * Poll status  for colab and other things that don't support websockets.
+   */
+  #pollQueue () {
+    setInterval(async () => {
+      try {
+        const resp = await this.fetchApi('/prompt')
+        const status = await resp.json()
+        this.dispatchEvent(new CustomEvent('status', { detail: status }))
+      } catch (error) {
+        this.dispatchEvent(new CustomEvent('status', { detail: null }))
+      }
+    }, 1000)
+  }
+
+  /**
+   * Creates and connects a WebSocket for realtime updates
+   * @param {boolean} isReconnect If the socket is connection is a reconnect attempt
+   */
+  #createSocket (isReconnect) {
+    if (this.socket) {
+      return
+    }
+
+    let opened = false
+    let existingSession = window.name || ''
+    if (existingSession) {
+      existingSession = '?clientId=' + existingSession
+    }
+    this.socket = new WebSocket(
+      `ws${this.protocol === 'https:' ? 's' : ''}://${this.api_host}${
+        this.api_base
+      }/ws${existingSession}`
+    )
+    console.log(
+      `ws${this.protocol === 'https:' ? 's' : ''}://${this.api_host}${
+        this.api_base
+      }/ws${existingSession}`
+    )
+    this.socket.binaryType = 'arraybuffer'
+
+    this.socket.addEventListener('open', () => {
+      opened = true
+      if (isReconnect) {
+        this.dispatchEvent(new CustomEvent('reconnected'))
+      }
+    })
+
+    this.socket.addEventListener('error', () => {
+      if (this.socket) this.socket.close()
+      if (!isReconnect && !opened) {
+        this.#pollQueue()
+      }
+    })
+
+    this.socket.addEventListener('close', () => {
+      setTimeout(() => {
+        this.socket = null
+        this.#createSocket(true)
+      }, 300)
+      if (opened) {
+        this.dispatchEvent(new CustomEvent('status', { detail: null }))
+        this.dispatchEvent(new CustomEvent('reconnecting'))
+      }
+    })
+
+    this.socket.addEventListener('message', event => {
+      try {
+        if (event.data instanceof ArrayBuffer) {
+          const view = new DataView(event.data)
+          const eventType = view.getUint32(0)
+          const buffer = event.data.slice(4)
+          switch (eventType) {
+            case 1:
+              const view2 = new DataView(event.data)
+              const imageType = view2.getUint32(0)
+              let imageMime
+              switch (imageType) {
+                case 1:
+                default:
+                  imageMime = 'image/jpeg'
+                  break
+                case 2:
+                  imageMime = 'image/png'
+              }
+              const imageBlob = new Blob([buffer.slice(4)], { type: imageMime })
+              this.dispatchEvent(
+                new CustomEvent('b_preview', { detail: imageBlob })
+              )
+              break
+            default:
+              throw new Error(
+                `Unknown binary websocket message of type ${eventType}`
+              )
+          }
+        } else {
+          const msg = JSON.parse(event.data)
+          switch (msg.type) {
+            case 'status':
+              if (msg.data.sid) {
+                this.clientId = msg.data.sid
+                window.name = this.clientId
+              }
+              this.dispatchEvent(
+                new CustomEvent('status', { detail: msg.data.status })
+              )
+              break
+            case 'progress':
+              this.dispatchEvent(
+                new CustomEvent('progress', { detail: msg.data })
+              )
+              break
+            case 'executing':
+              this.dispatchEvent(
+                new CustomEvent('executing', { detail: msg.data.node })
+              )
+              break
+            case 'executed':
+              this.dispatchEvent(
+                new CustomEvent('executed', { detail: msg.data })
+              )
+              break
+            case 'execution_start':
+              this.dispatchEvent(
+                new CustomEvent('execution_start', { detail: msg.data })
+              )
+              break
+            case 'execution_error':
+              this.dispatchEvent(
+                new CustomEvent('execution_error', { detail: msg.data })
+              )
+              break
+            case 'execution_cached':
+              this.dispatchEvent(
+                new CustomEvent('execution_cached', { detail: msg.data })
+              )
+              break
+            default:
+              if (this.#registered.has(msg.type)) {
+                this.dispatchEvent(
+                  new CustomEvent(msg.type, { detail: msg.data })
+                )
+              } else {
+                throw new Error(`Unknown message type ${msg.type}`)
+              }
+          }
+        }
+      } catch (error) {
+        console.warn('Unhandled message:', event.data, error)
+      }
+    })
+  }
+
+  /**
+   * Initialises sockets and realtime updates
+   */
+  init () {
+    this.#createSocket()
+  }
+
+  /**
+   * Gets a list of extension urls
+   * @returns An array of script urls to import
+   */
+  async getExtensions () {
+    const resp = await this.fetchApi('/extensions', { cache: 'no-store' })
+    return await resp.json()
+  }
+
+  /**
+   * Gets a list of embedding names
+   * @returns An array of script urls to import
+   */
+  async getEmbeddings () {
+    const resp = await this.fetchApi('/embeddings', { cache: 'no-store' })
+    return await resp.json()
+  }
+
+  /**
+   * Loads node object definitions for the graph
+   * @returns The node definitions
+   */
+  async getNodeDefs () {
+    const resp = await this.fetchApi('/object_info', { cache: 'no-store' })
+    return await resp.json()
+  }
+
+  /**
+   *
+   * @param {number} number The index at which to queue the prompt, passing -1 will insert the prompt at the front of the queue
+   * @param {object} prompt The prompt data to queue
+   */
+  async queuePrompt (number, { output, workflow }) {
+    const body = {
+      client_id: this.clientId,
+      prompt: output,
+      extra_data: { extra_pnginfo: { workflow } }
+    }
+
+    if (number === -1) {
+      body.front = true
+    } else if (number != 0) {
+      body.number = number
+    }
+
+    const res = await this.fetchApi('/prompt', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body)
+    })
+
+    if (res.status !== 200) {
+      throw {
+        response: await res.json()
+      }
+    }
+
+    return await res.json()
+  }
+
+  /**
+   * Loads a list of items (queue or history)
+   * @param {string} type The type of items to load, queue or history
+   * @returns The items of the specified type grouped by their status
+   */
+  async getItems (type) {
+    if (type === 'queue') {
+      return this.getQueue()
+    }
+    return this.getHistory()
+  }
+
+  /**
+   * Gets the current state of the queue
+   * @returns The currently running and queued items
+   */
+  async getQueue () {
+    try {
+      const res = await this.fetchApi('/queue')
+      const data = await res.json()
+      return {
+        // Running action uses a different endpoint for cancelling
+        Running: data.queue_running.map(prompt => ({
+          prompt,
+          remove: { name: 'Cancel', cb: () => api.interrupt() }
+        })),
+        Pending: data.queue_pending.map(prompt => ({ prompt }))
+      }
+    } catch (error) {
+      console.error(error)
+      return { Running: [], Pending: [] }
+    }
+  }
+
+  /**
+   * Gets the prompt execution history
+   * @returns Prompt history including node outputs
+   */
+  async getHistory (max_items = 200) {
+    try {
+      const res = await this.fetchApi(`/history?max_items=${max_items}`)
+      return { History: Object.values(await res.json()) }
+    } catch (error) {
+      console.error(error)
+      return { History: [] }
+    }
+  }
+
+  /**
+   * Gets system & device stats
+   * @returns System stats such as python version, OS, per device info
+   */
+  async getSystemStats () {
+    const res = await this.fetchApi('/system_stats')
+    return await res.json()
+  }
+
+  /**
+   * Sends a POST request to the API
+   * @param {*} type The endpoint to post to
+   * @param {*} body Optional POST data
+   */
+  async #postItem (type, body) {
+    try {
+      await this.fetchApi('/' + type, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: body ? JSON.stringify(body) : undefined
+      })
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  /**
+   * Deletes an item from the specified list
+   * @param {string} type The type of item to delete, queue or history
+   * @param {number} id The id of the item to delete
+   */
+  async deleteItem (type, id) {
+    await this.#postItem(type, { delete: [id] })
+  }
+
+  /**
+   * Clears the specified list
+   * @param {string} type The type of list to clear, queue or history
+   */
+  async clearItems (type) {
+    await this.#postItem(type, { clear: true })
+  }
+
+  /**
+   * Interrupts the execution of the running prompt
+   */
+  async interrupt () {
+    await this.#postItem('interrupt', null)
+  }
+
+  /**
+   * Gets user configuration data and where data should be stored
+   * @returns { Promise<{ storage: "server" | "browser", users?: Promise<string, unknown>, migrated?: boolean }> }
+   */
+  async getUserConfig () {
+    return (await this.fetchApi('/users')).json()
+  }
+
+  /**
+   * Creates a new user
+   * @param { string } username
+   * @returns The fetch response
+   */
+  createUser (username) {
+    return this.fetchApi('/users', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ username })
+    })
+  }
+
+  /**
+   * Gets all setting values for the current user
+   * @returns { Promise<string, unknown> } A dictionary of id -> value
+   */
+  async getSettings () {
+    return (await this.fetchApi('/settings')).json()
+  }
+
+  /**
+   * Gets a setting for the current user
+   * @param { string } id The id of the setting to fetch
+   * @returns { Promise<unknown> } The setting value
+   */
+  async getSetting (id) {
+    return (await this.fetchApi(`/settings/${encodeURIComponent(id)}`)).json()
+  }
+
+  /**
+   * Stores a dictionary of settings for the current user
+   * @param { Record<string, unknown> } settings Dictionary of setting id -> value to save
+   * @returns { Promise<void> }
+   */
+  async storeSettings (settings) {
+    return this.fetchApi(`/settings`, {
+      method: 'POST',
+      body: JSON.stringify(settings)
+    })
+  }
+
+  /**
+   * Stores a setting for the current user
+   * @param { string } id The id of the setting to update
+   * @param { unknown } value The value of the setting
+   * @returns { Promise<void> }
+   */
+  async storeSetting (id, value) {
+    return this.fetchApi(`/settings/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      body: JSON.stringify(value)
+    })
+  }
+
+  /**
+   * Gets a user data file for the current user
+   * @param { string } file The name of the userdata file to load
+   * @param { RequestInit } [options]
+   * @returns { Promise<unknown> } The fetch response object
+   */
+  async getUserData (file, options) {
+    return this.fetchApi(`/userdata/${encodeURIComponent(file)}`, options)
+  }
+
+  /**
+   * Stores a user data file for the current user
+   * @param { string } file The name of the userdata file to save
+   * @param { unknown } data The data to save to the file
+   * @param { RequestInit & { stringify?: boolean, throwOnError?: boolean } } [options]
+   * @returns { Promise<void> }
+   */
+  async storeUserData (
+    file,
+    data,
+    options = { stringify: true, throwOnError: true }
+  ) {
+    const resp = await this.fetchApi(`/userdata/${encodeURIComponent(file)}`, {
+      method: 'POST',
+      body: options?.stringify ? JSON.stringify(data) : data,
+      ...options
+    })
+    if (resp.status !== 200) {
+      throw new Error(
+        `Error storing user data file '${file}': ${resp.status} ${
+          (await resp).statusText
+        }`
+      )
+    }
+  }
+}
+
 const { entrypoints } = require('uxp')
 
 showAlert = () => {
@@ -61,6 +517,49 @@ function createSelectWithOptions (title, options, defaultValue) {
   return [div, selectElement]
 }
 
+// 创建文本输入 - 带说明
+function createTextInput (title, defaultValue) {
+  // Create a container for the upload control
+  const uploadContainer = document.createElement('div')
+  uploadContainer.className = 'card'
+
+  // Create a label for the upload control
+  const nameLabel = document.createElement('label')
+  nameLabel.textContent = title
+  uploadContainer.appendChild(nameLabel)
+
+  // Create an input field for the image name
+  const textInput = document.createElement('textarea')
+  textInput.value = defaultValue
+
+  uploadContainer.appendChild(textInput)
+
+  return [uploadContainer, textInput]
+}
+
+// 种子的处理
+function randomSeed (seed, data) {
+  for (const id in data) {
+    if (
+      data[id].inputs.seed != undefined &&
+      !Array.isArray(data[id].inputs.seed) && //如果是数组，则由其他节点控制
+      ['increment', 'decrement', 'randomize'].includes(seed[id])
+    ) {
+      data[id].inputs.seed = Math.round(Math.random() * 1849378600828930)
+      // console.log('new Seed', data[id])
+    }
+    if (
+      data[id].inputs.noise_seed != undefined &&
+      !Array.isArray(data[id].inputs.noise_seed) && //如果是数组，则由其他节点控制
+      ['increment', 'decrement', 'randomize'].includes(seed[id])
+    ) {
+      data[id].inputs.noise_seed = Math.round(Math.random() * 1849378600828930)
+    }
+    console.log('new Seed', data[id])
+  }
+  return data
+}
+
 async function getMyApps (
   hostUrl,
   category = '',
@@ -93,13 +592,163 @@ async function getMyApps (
   return data
 }
 
+function runMyApp (url, data) {
+  fetch(`${url}/prompt`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: data
+  })
+    .then(response => {
+      // Handle response here
+      console.log(response)
+    })
+    .catch(error => {
+      // Handle error here
+    })
+}
+
+async function writeImageData (url) {
+  
+  const photoshop = require('photoshop').app
+
+  // 通过URL获取图片数据
+  const response = await fetch(url)
+
+  // const blob = await response.blob() 
+  const arrayBuffer = await response.arrayBuffer()
+ 
+  // 创建PhotoshopImageData实例
+  const imageData =
+    await require('photoshop').imaging.createImageDataFromBuffer(arrayBuffer, {
+      width: 512,
+      height: 512,
+      components: 4, // RGBA
+      colorSpace: 'RGB',
+      colorProfile: 'sRGB IEC61966-2.1'
+    })
+    console.log('writeImageData',imageData)
+  // 将图片数据写入图层
+  await require('photoshop').imaging.putPixels({
+    layerID: photoshop.activeDocument.activeLayers[0]._id, // 替换为目标图层的ID
+    imageData: imageData
+  })
+}
+
+async function show (src, id, type = 'image') {
+  console.log('#show', id, src)
+
+  if (src && type == 'image') {
+    writeImageData(src)
+  }
+
+  if (src && (type == 'images' || type == 'images_prompts')) {
+    for (const v of src) {
+      let url = v,
+        prompt = ''
+
+      if (type == 'images_prompts') {
+        // 是个数组，多了对应的prompt
+        url = v[0]
+        prompt = v[1]
+      }
+
+      writeImageData(url)
+    }
+  }
+}
+
 async function showAppsNames () {
+  const hostUrl = 'http://127.0.0.1:8188'
+  const photoshop = require('photoshop').app
+  const activeDocument = photoshop.activeDocument
+  const { width, height } = activeDocument
 
-  const photoshop = require('photoshop').app;
-  const activeDocument=photoshop.activeDocument;
-  const {width,height}=activeDocument;
+  const api = new ComfyApi()
 
-  const apps = await getMyApps('http://127.0.0.1:8188', 'photoshop', null, true)
+  api.addEventListener('status', ({ detail }) => {
+    console.log('status', detail, detail.exec_info?.queue_remaining)
+    try {
+    } catch (error) {
+      console.log(error)
+    }
+  })
+
+  api.addEventListener('progress', ({ detail }) => {
+    console.log('progress', detail)
+    const class_type = app.data[detail?.node]?.class_type || ''
+    try {
+      let p = `${parseFloat((100 * detail.value) / detail.max).toFixed(
+        1
+      )}% ${class_type}`
+      console.log('progress', p)
+    } catch (error) {}
+  })
+
+  api.addEventListener('executed', async ({ detail }) => {
+    console.log('executed', detail)
+    // if (!enabled) return;
+    const images = detail?.output?.images
+
+    const _images = detail?.output?._images
+    const prompts = detail?.output?.prompts
+
+    if (images) {
+      // if (!images) return;
+
+      let url = hostUrl
+
+      show(
+        Array.from(images, img => {
+          return `${url}/view?filename=${encodeURIComponent(
+            img.filename
+          )}&type=${img.type}&subfolder=${encodeURIComponent(
+            img.subfolder
+          )}&t=${+new Date()}`
+        }),
+        detail.node,
+        'images'
+      )
+    } else if (_images && prompts) {
+      let url = hostUrl
+
+      let items = []
+      // 支持图片的batch
+      Array.from(_images, (imgs, i) => {
+        for (const img of imgs) {
+          items.push([
+            `${url}/view?filename=${encodeURIComponent(img.filename)}&type=${
+              img.type
+            }&subfolder=${encodeURIComponent(img.subfolder)}&t=${+new Date()}`,
+            prompts[i]
+          ])
+        }
+      })
+
+      show(items, detail.node, 'images_prompts')
+    }
+  })
+
+  api.addEventListener('execution_error', ({ detail }) => {
+    console.log('execution_error', detail)
+    // show(URL.createObjectURL(detail));
+  })
+
+  api.addEventListener('execution_start', async ({ detail }) => {
+    console.log('execution_start', detail)
+    try {
+    } catch (error) {}
+  })
+
+  api.api_host = hostUrl.replace('http://', '')
+  api.api_base = ''
+  api.protocol = 'http'
+  api.init()
+
+  window.api = api
+
+  const apps = await getMyApps(hostUrl, 'photoshop', null, true)
   const sortedNames = Array.from(apps, a => {
     return {
       text: a.filename.split('.json')[0],
@@ -111,6 +760,7 @@ async function showAppsNames () {
 
   const appDom = document.getElementById('apps')
   appDom.innerText = ''
+  const mainDom = document.getElementById('main')
 
   // 选择app
   const [appsSelectDom, selectElement] = createSelectWithOptions(
@@ -121,30 +771,63 @@ async function showAppsNames () {
   // 选择事件绑定
   selectElement.addEventListener('change', e => {
     e.preventDefault()
-    app=apps.filter(app => app.filename === selectElement.value)[0]
-    console.log(app)
+
+    app = apps.filter(app => app.filename === selectElement.value)[0]
+    // console.log(app,api.clientId)
+
+    mainDom.innerHTML = ''
 
     // 输入和输出的ui创建
-    app
+    // 文本输入
+    for (let index = 0; index < app.input.length; index++) {
+      const inp = app.input[index]
+      if (inp.inputs?.text) {
+        const [div, textInput] = createTextInput(inp.title, inp.inputs.text)
+        mainDom.appendChild(div)
+        textInput.addEventListener('change', e => {
+          e.preventDefault()
+          // 更新文本
+          app.input[index].inputs.text = textInput.value
+        })
+      }
+    }
 
+    // 运行按钮
+    const runBtn = document.createElement('button')
+    runBtn.innerText = 'RUN ' + `${api.clientId ? '+' : '-'}`
+    mainDom.appendChild(runBtn)
+
+    runBtn.addEventListener('click', e => {
+      e.preventDefault()
+      const seed = app.seed
+      let prompt = app.data
+
+      // seed 为 fixed 处理成random
+      for (const key in seed) {
+        if (seed[key] == 'fixed') seed[key] = 'randomize'
+      }
+
+      // 随机seed
+      prompt = randomSeed(seed, prompt)
+
+      const data = JSON.stringify({ prompt, client_id: api.clientId })
+      runMyApp(hostUrl, data)
+    })
   })
 
   appDom.appendChild(appsSelectDom)
 
-  // 尺寸调整
-  const widthInput = document.createElement("input");
-  widthInput.type='number';
-  widthInput.value=width;
+  // // 尺寸调整
+  // const widthInput = document.createElement('input')
+  // widthInput.type = 'number'
+  // widthInput.value = width
 
-  const heightInput = document.createElement("input");
-  heightInput.type='number';
-  heightInput.value=height;
+  // const heightInput = document.createElement('input')
+  // heightInput.type = 'number'
+  // heightInput.value = height
 
-
-  appDom.appendChild(widthInput)
-  appDom.appendChild(heightInput)
-
-
+  // appDom.appendChild(widthInput)
+  // appDom.appendChild(heightInput)
 }
 
 document.getElementById('btnPopulate').addEventListener('click', showAppsNames)
