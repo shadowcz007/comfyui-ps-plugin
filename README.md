@@ -1,5 +1,10 @@
 # comfyui-mixlab-ps-plugin
 
+Turn your workflow into a Photoshop plugin.
+
+把你的工作流变成Photoshop插件。
+
+
 Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](https://github.com/shadowcz007/comfyui-mixlab-nodes). Name the category of appinfo as "photoshop" so that it can be accessed.
 
 使用[comfyui-mixlab-nodes的appinfo](https://github.com/shadowcz007/comfyui-mixlab-nodes)创建适用于Photoshop的workflow。 appinfo的category用photoshop命名即可读取
