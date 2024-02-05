@@ -24,6 +24,14 @@ Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](http
 
 ![](./examples/text-to-image-ps.jpg)
 
+
+## image-to-image
+
+- Now you can use the LoadImage node as input to implement the image-to-image workflow.
+
+![img-to-img](./examples/img-to-img.png)
+
+
 ## download
 [comfyui-mixlab-ps-plugin_PS.ccx](./dist/comfyui-mixlab-ps-plugin_PS.ccx)
 
