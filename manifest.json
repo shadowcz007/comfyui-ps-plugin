@@ -1,7 +1,7 @@
 {
   "id": "comfyui-mixlab-ps-plugin",
   "name": "comfyui-mixlab-ps-plugin",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.html",
   "host": [
     {
@@ -10,13 +10,13 @@
     }
   ],
   "manifestVersion": 5,
-  "entrypoints": [ 
+  "entrypoints": [
     {
       "type": "panel",
       "id": "mixlab_app",
       "minimumSize": {
         "width": 320,
-        "height":560
+        "height": 560
       },
       "maximumSize": {
         "width": 2000,
@@ -73,7 +73,7 @@
       "id": "setup",
       "minimumSize": {
         "width": 300,
-        "height":300
+        "height": 300
       },
       "maximumSize": {
         "width": 300,
@@ -87,6 +87,40 @@
         "width": 300,
         "height": 300
       },
+      "icons": [
+        {
+          "width": 32,
+          "height": 32,
+          "path": "icons/light.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "dark",
+            "darkest"
+          ],
+          "species": [
+            "generic"
+          ]
+        },
+        {
+          "width": 32,
+          "height": 32,
+          "path": "icons/light.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "lightest",
+            "light"
+          ],
+          "species": [
+            "generic"
+          ]
+        }
+      ],
       "label": {
         "default": "ComfyUI server"
       }
@@ -123,12 +157,12 @@
   ],
   "requiredPermissions": {
     "network": {
-        "domains": "all"
+      "domains": "all"
     },
     "clipboard": "readAndWrite",
     "webview": {
-        "allow": "yes",
-        "domains": "all"
+      "allow": "yes",
+      "domains": "all"
     }
-}
+  }
 }
