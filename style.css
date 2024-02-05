@@ -53,3 +53,14 @@ body {
   select{
     margin: 0;
   }
+
+  .input_image{
+    cursor: pointer;
+    width: 120px;
+    height: fit-content;
+  }
+
+  .input_image:hover{
+    outline: 1px solid rgb(192, 234, 255);
+    
+  }

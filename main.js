@@ -477,6 +477,11 @@ const photoshop = require('photoshop').app
 const { executeAsModal } = require('photoshop').core
 const batchPlay = require('photoshop').action.batchPlay
 
+const Jimp = require('./lib/jimp.min.js')
+
+const base64Df =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAAAXNSR0IArs4c6QAAALZJREFUKFOFkLERwjAQBPdbgBkInECGaMLUQDsE0AkRVRAYWqAByxldPPOWHwnw4OBGye1p50UDSoA+W2ABLPN7i+C5dyC6R/uiAUXRQCs0bXoNIu4QPQzAxDKxHoALOrZcqtiyR/T6CXw7+3IGHhkYcy6BOR2izwT8LptG8rbMiCRAUb+CQ6WzQVb0SNOi5Z2/nX35DRyb/ENazhpWKoGwrpD6nICp5c2qogc4of+c7QcrhgF4Aa/aoAFHiL+RAAAAAElFTkSuQmCC'
+
 // 当前的workflow
 window.app = null
 
@@ -645,6 +650,29 @@ function createSelectWithOptions (title, options, defaultValue) {
   div.appendChild(selectElement)
 
   return [div, selectElement]
+}
+
+// 创建图片输入 - 带说明
+function createImageInput (title, defaultValue) {
+  const div = document.createElement('div')
+  div.className = 'card'
+
+  // Create a label for the upload control
+  const nameLabel = document.createElement('label')
+  nameLabel.textContent = title
+  div.appendChild(nameLabel)
+
+  // Create an input field for the image name
+  const imgInput = document.createElement('img')
+  imgInput.src = base64Df
+  imgInput.className = 'input_image'
+  // imgInput.src = `${hostUrl}/view?filename=${encodeURIComponent(
+  //   defaultValue
+  // )}&type=input&rand=${Math.random()}`
+
+  div.appendChild(imgInput)
+
+  return [div, imgInput]
 }
 
 // 创建文本输入 - 带说明
@@ -968,35 +996,51 @@ async function getSelectionInfoExe () {
 async function getImageFromLayerByBound () {
   // 选区
   let bound = await getSelectionInfoExe()
-
+  if (bound == undefined) return { base64: null, buffer: null }
   // 取base64 ，上传
   let file
-  const folder = await fs.getTemporaryFolder()
-  await executeAsModal(
-    async () => {
-      const canvas_image_name = 'canvas_image.png'
-      file = await folder.createFile(canvas_image_name, {
-        overwrite: true
-      })
+  try {
+    const folder = await fs.getTemporaryFolder()
+    await executeAsModal(
+      async () => {
+        const canvas_image_name = 'input_image.png'
+        file = await folder.createFile(canvas_image_name, {
+          overwrite: true
+        })
 
-      const currentDocument = photoshop.activeDocument
-      await currentDocument.saveAs.png(file, null, true)
-      //save file end
+        const currentDocument = photoshop.activeDocument
+        await currentDocument.save(file, formats.PNG)
+        //save file end
 
-      //read the saved image.png
-    },
+        //read the saved image.png
+      },
 
-    { commandName: 'readPng' }
-  )
+      { commandName: 'readPng' }
+    )
+  } catch (error) {
+    console.log(error)
+  }
 
+  // console.log(file)
   const arrayBuffer = await file.read({
     format: formats.binary
   })
 
-  const { url, name } = await uploadImage(arrayBuffer)
+  // const { url, name } = await uploadImage(arrayBuffer)
 
-  console.log(url, name)
-  return { url, name }
+  // console.log(arrayBuffer)
+  // return { url, name }
+
+  const im = await Jimp.read(arrayBuffer)
+  let cropped_img = await im.crop(
+    bound.left,
+    bound.top,
+    bound.width,
+    bound.height
+  )
+  let base64 = await cropped_img.getBase64Async(Jimp.MIME_PNG)
+  let buffer = await cropped_img.getBufferAsync(Jimp.MIME_PNG)
+  return { base64, buffer }
 }
 
 // 读取url里的图片，并粘贴到ps里
@@ -1095,6 +1139,36 @@ function createApp (apps, targetFilename, mainDom) {
   mainDom.innerHTML = ''
 
   // 输入和输出的ui创建
+
+  // 图片输入
+  for (let index = 0; index < app.input.length; index++) {
+    const inp = app.input[index]
+    // 节点可能不存在
+    if (inp?.inputs?.image && ['LoadImage'].includes(inp.class_type)) {
+      const [div, imgInput] = createImageInput(inp.title, inp.inputs.image)
+      mainDom.appendChild(div)
+
+      // 点击后从当前选区获取图片
+      imgInput.addEventListener('click', async e => {
+        // console.log('mouserover')
+        const { base64, buffer } = await getImageFromLayerByBound()
+        if (base64 === null) {
+          // 没有选择选区
+          photoshop.showAlert(`Please select the region`)
+          return
+        }
+        if (base64 != imgInput.src) {
+          imgInput.src = base64
+          // console.log(base64)
+          const { url, name } = await uploadImage(buffer)
+          console.log(url)
+          // 更新图片
+          window.app.data[inp.id].inputs.image = name
+        }
+      })
+    }
+  }
+
   // 文本输入
   for (let index = 0; index < app.input.length; index++) {
     const inp = app.input[index]
@@ -1207,6 +1281,11 @@ function createApp (apps, targetFilename, mainDom) {
     const data = JSON.stringify({ prompt, client_id: api.clientId })
     runMyApp(hostUrl, data)
   })
+
+  // focus
+  document.body.addEventListener('focus', e => {
+    console.log('#focus')
+  })
 }
 
 async function showAppsNames () {
@@ -1253,9 +1332,13 @@ async function showAppsNames () {
     console.log('executed', detail)
     // if (!enabled) return;
     const images = detail?.output?.images
-
     const _images = detail?.output?._images
     const prompts = detail?.output?.prompts
+
+    const nodeId = detail.node
+
+    // 匹配输出，才show
+    if (!window.app.output.filter(o => o.id === nodeId)[0]) return
 
     if (images) {
       // if (!images) return;
@@ -1295,7 +1378,10 @@ async function showAppsNames () {
 
   api.addEventListener('execution_error', ({ detail }) => {
     console.log('execution_error', detail)
-    Array.from(statusDoms, s => (s.innerText = `execution_error:${detail}`))
+    Array.from(
+      statusDoms,
+      s => (s.innerText = `execution_error:${JSON.stringify(detail)}`)
+    )
   })
 
   api.addEventListener('execution_start', async ({ detail }) => {
