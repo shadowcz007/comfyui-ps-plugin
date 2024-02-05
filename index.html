@@ -1,25 +1,35 @@
 <!DOCTYPE html>
 <html>
+
 <head>
-    <script src="main.js"></script> 
-    <link rel="stylesheet" href="style.css">   
+  <script src="main.js"></script>
+  <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
   <sp-heading>
-    <sp-button id="btnPopulate">Load ComfyUI App</sp-button>
+    <span class="status"></span>
   </sp-heading>
- 
+
   <sp-body id="apps">
     <p>
-      Create a workflow for Photoshop using the appinfo of comfyui-mixlab-nodes. Name the category of appinfo as "photoshop" so that it can be accessed.
+      Create a workflow for Photoshop using the appinfo of comfyui-mixlab-nodes. Name the category of appinfo as
+      "photoshop" so that it can be accessed.
     </p>
   </sp-body>
 
   <sp-main id="main">
-    
+
   </sp-main>
   <footer>
-    
+
   </footer>
+
+  <dialog>
+    <webview id="about" width="100%" height="360px" src="https://github.com/shadowcz007/comfyui-ps-plugin"></webview>
+  </dialog>
+
+
 </body>
+
 </html>

@@ -2,6 +2,11 @@ body {
     color: white;
     padding: 0 16px;
   }
+
+  uxp-panel{
+    color: white;
+    padding: 0 16px;
+  }
   li:before {
     content: '• ';
     width: 3em;
@@ -11,6 +16,10 @@ body {
     border: 1px solid #808080;
     border-radius: 4px;
     padding: 16px;
+  }
+
+  .status{
+    font-size: 14px;
   }
 
   .card{

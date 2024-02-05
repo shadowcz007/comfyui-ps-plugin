@@ -34,7 +34,7 @@ class ComfyApi extends EventTarget {
    * Poll status  for colab and other things that don't support websockets.
    */
   #pollQueue () {
-    setInterval(async () => {
+    this._pollQueueInterval = setInterval(async () => {
       try {
         const resp = await this.fetchApi('/prompt')
         const status = await resp.json()
@@ -79,17 +79,32 @@ class ComfyApi extends EventTarget {
     })
 
     this.socket.addEventListener('error', () => {
-      if (this.socket) this.socket.close()
-      if (!isReconnect && !opened) {
-        this.#pollQueue()
-      }
+      this.socket = null
+      this.dispatchEvent(new CustomEvent('status', { detail: null }))
+      // try {
+      //   if (this.socket) {
+      //     this.socket.close()
+      //   }
+      //   if (!isReconnect && !opened) {
+      //     // this.#pollQueue()
+      //   }
+      // } catch (error) {
+      //   console.log('error',error)
+      //   this.socket=null;
+      //   this.dispatchEvent(new CustomEvent('status', { detail: null }));
+
+      // }
     })
 
     this.socket.addEventListener('close', () => {
-      setTimeout(() => {
-        this.socket = null
-        this.#createSocket(true)
-      }, 300)
+      console.log('close', this.socket)
+      if (this.socket) {
+        setTimeout(() => {
+          this.socket = null
+          this.#createSocket(true)
+        }, 300)
+      }
+
       if (opened) {
         this.dispatchEvent(new CustomEvent('status', { detail: null }))
         this.dispatchEvent(new CustomEvent('reconnecting'))
@@ -187,6 +202,7 @@ class ComfyApi extends EventTarget {
    * Initialises sockets and realtime updates
    */
   init () {
+    // console.log('#init',this.protocol,this.api_host)
     this.#createSocket()
   }
 
@@ -457,27 +473,142 @@ class ComfyApi extends EventTarget {
 const { entrypoints } = require('uxp')
 const { localFileSystem: fs, fileTypes, formats } = require('uxp').storage
 const photoshop = require('photoshop').app
+const { executeAsModal } = require('photoshop').core
+const batchPlay = require('photoshop').action.batchPlay
+
 // 当前的workflow
 window.app = null
 
-const hostUrl = 'http://127.0.0.1:8188'
+let hostUrl = 'http://127.0.0.1:8188'
 
+function createSetup (parentElement) {
+  let heading = document.createElement('sp-heading')
+  heading.innerHTML = `<span class="status"></span>`
+
+  parentElement.appendChild(heading)
+
+  const [div, textInput] = createTextInput('Host Url', hostUrl, true)
+  parentElement.appendChild(div)
+
+  textInput.addEventListener('change', e => {
+    hostUrl = textInput.value
+    const appDom = document.getElementById('apps')
+    appDom.innerText = ''
+    const mainDom = document.getElementById('main')
+    mainDom.innerText = ''
+
+    if (window.api?._pollQueueInterval)
+      clearInterval(window.api._pollQueueInterval)
+    window.api = null
+    btn.style.background = 'normal'
+  })
+
+  let footer = document.createElement('footer')
+  parentElement.appendChild(footer)
+
+  let btn = document.createElement('sp-button')
+
+  btn.innerText = 'Load ComfyUI App'
+
+  btn.addEventListener('click', () => {
+    btn.style.background = 'darkblue'
+    showAppsNames()
+    // setTimeout(()=>btn.style.background='normal',1500)
+  })
+
+  footer.appendChild(btn)
+}
+
+function handleFlyout(id) {
+  if(id==='about'){
+    
+    document.querySelector('dialog').showModal()
+  }
+}
 
 entrypoints.setup({
   panels: {
-    vanilla: {
-      show (node) {}
-    }
+    mixlab_app: {
+      show (node) {
+        // console.log(node)
+      }
+    },
+    setup: {
+      show (node) {
+        createSetup(node)
+        // console.log(node)
+      }
+    },
+    // menuItems: [
+    //   {id: "about", label: "about"},
+    //   // {id: "mixlab_app", label: "Mixlab App"}, 
+    // ],
+    // invokeMenu(id) {
+    //   handleFlyout(id);
+    // }
   }
 })
 
-function showLayerNames () {
-  const app = require('photoshop').app
-  const allLayers = app.activeDocument.layers
-  const allLayerNames = allLayers.map(layer => layer.name)
-  const sortedNames = allLayerNames.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
-  document.getElementById('apps').innerHTML = `
-      <ul>${sortedNames.map(name => `<li>${name}</li>`).join('')}</ul>`
+async function arrayBufferToFile (arrayBuffer, image_name = 'output_image.png') {
+  
+    // const img = _base64ToArrayBuffer(b64Image)
+    const img = arrayBuffer
+
+    const img_name = image_name
+
+    const folder = await fs.getTemporaryFolder()
+    const file = await folder.createFile(img_name, { overwrite: true })
+
+    await file.write(img, { format: formats.binary })
+
+    const token = await fs.createSessionToken(file) // batchPlay requires a token on _path
+
+    let place_event_result
+    let imported_layer
+    await executeAsModal(async () => {
+      const result = await batchPlay(
+        [
+          {
+            _obj: 'placeEvent',
+            // ID: 6,
+            null: {
+              _path: token,
+              _kind: 'local'
+            },
+            freeTransformCenterState: {
+              _enum: 'quadCenterState',
+              _value: 'QCSAverage'
+            },
+            offset: {
+              _obj: 'offset',
+              horizontal: {
+                _unit: 'pixelsUnit',
+                _value: 0
+              },
+              vertical: {
+                _unit: 'pixelsUnit',
+                _value: 0
+              }
+            },
+            _isCommand: true,
+            _options: {
+              dialogOptions: 'dontDisplay'
+            }
+          }
+        ],
+        {
+          synchronousExecution: true,
+          modalBehavior: 'execute'
+        }
+      )
+      console.log('placeEmbedd batchPlay result: ', result)
+
+      place_event_result = result[0]
+      imported_layer = await photoshop.activeDocument.activeLayers[0]
+    })
+    return imported_layer
+  
+  // return place_event_result
 }
 
 // 创建下拉选择
@@ -518,23 +649,36 @@ function createSelectWithOptions (title, options, defaultValue) {
 }
 
 // 创建文本输入 - 带说明
-function createTextInput (title, defaultValue) {
+function createTextInput (title, defaultValue, isSingle = false) {
   // Create a container for the upload control
-  const uploadContainer = document.createElement('div')
-  uploadContainer.className = 'card'
+  const div = document.createElement('div')
+  div.className = 'card'
 
   // Create a label for the upload control
   const nameLabel = document.createElement('label')
   nameLabel.textContent = title
-  uploadContainer.appendChild(nameLabel)
+  div.appendChild(nameLabel)
 
   // Create an input field for the image name
   const textInput = document.createElement('textarea')
   textInput.value = defaultValue
 
-  uploadContainer.appendChild(textInput)
+  if (isSingle) {
+    textInput.style.height = '44px'
+  }
 
-  return [uploadContainer, textInput]
+  div.appendChild(textInput)
+
+  // fixbug ，按backspace的时候，会删除图层
+  textInput.addEventListener('focus', async e => {
+    lockedCurrentLayerForTextInput()
+  })
+
+  textInput.addEventListener('blur', async e => {
+    unLockedCurrentLayerForTextInput()
+  })
+
+  return [div, textInput]
 }
 
 // 数字输入
@@ -570,11 +714,11 @@ function createNumberSelectInput (title, defaultValue, opts) {
 
   div.appendChild(numInput)
 
-  const value=document.createElement('label');
-  value.innerText=defaultValue;
+  const value = document.createElement('label')
+  value.innerText = defaultValue
 
-  numInput.addEventListener('change',e=>{
-    value.innerText=numInput.value;
+  numInput.addEventListener('change', e => {
+    value.innerText = numInput.value
   })
 
   div.appendChild(value)
@@ -654,6 +798,74 @@ function runMyApp (url, data) {
     })
 }
 
+// 取消选择
+async function unselectActiveLayers () {
+  const layers = await photoshop.activeDocument.activeLayers
+  for (layer of layers) {
+    layer.selected = false
+  }
+}
+async function unselectActiveLayersExe () {
+  await executeAsModal(async () => {
+    await unselectActiveLayers()
+  })
+}
+async function selectLayers (layers) {
+  await unselectActiveLayers()
+  for (layer of layers) {
+    try {
+      if (layer) {
+        const is_visible = layer.visible // don't change the visibility when selecting the layer
+        layer.selected = true
+        layer.visible = is_visible
+      }
+    } catch (e) {
+      console.warn(e)
+    }
+  }
+}
+
+async function selectLayersExe (layers) {
+  await executeAsModal(async () => {
+    await selectLayers(layers)
+  })
+}
+
+async function lockedCurrentLayerForTextInput () {
+  window._layersLocked = []
+
+  for (layer of photoshop.activeDocument.activeLayers) {
+    try {
+      if (layer) {
+        window._layersLocked.push({
+          _id: layer._id,
+          locked: layer.locked
+        })
+        layer.locked = true
+      }
+    } catch (e) {
+      console.warn(e)
+    }
+  }
+}
+
+function unLockedCurrentLayerForTextInput () {
+  // window._layersLocked = []
+  for (layer of photoshop.activeDocument.layers) {
+    try {
+      if (
+        window._layersLocked &&
+        window._layersLocked.filter(l => l._id === layer._id)[0]
+      ) {
+        let l = window._layersLocked.filter(l => l._id === layer._id)[0]
+        layer.locked = l.locked
+      }
+    } catch (e) {
+      console.warn(e)
+    }
+  }
+}
+
 // 读取url里的图片，并粘贴到ps里
 async function downloadIt (link) {
   const res = await fetch(link)
@@ -674,23 +886,57 @@ async function downloadIt (link) {
     // let newLayer = await currentDocument.layers.add();
 
     const newDocument = await photoshop.open(image)
+    let new_layer
     if (currentDocument) {
-      await newDocument.activeLayers[0].duplicate(currentDocument)
-      await newDocument.close()
+      new_layer = await newDocument.activeLayers[0].duplicate(currentDocument)
+      // await newDocument.close()
+      await newDocument.closeWithoutSaving()
     }
 
     // 删除
     await image.delete()
+
+    return new_layer
   } catch (e) {
     console.log(e)
   }
 }
 
+async function downloadItExe (link) {
+  let new_layer
+  await executeAsModal(async () => {
+    try {
+      new_layer = await downloadIt(link)
+    } catch (e) {
+      console.warn(e)
+    }
+  })
+  return new_layer
+}
+
+async function addImageFromUrl (link) {
+  const res = await fetch(link)
+  
+  const img = await res.arrayBuffer();
+
+  let imageName='output.png'
+
+  // for (let index = 0; index < window.app.input.length; index++) {
+  //   const inp = app.input[index]
+  //   if (inp.inputs?.text) {
+  //     imageName+=`_${inp.title}_${window.app.data[inp.id].inputs.text.slice(0,10)}`
+  //   }
+  // }
+  // imageName=imageName?(imageName+'.png'):'output.png'
+  // console.log(imageName)
+  await arrayBufferToFile(img,imageName)
+}
+
 async function show (src, id, type = 'image') {
-  console.log('#show', id, src)
+  console.log('#show',type, id, src)
 
   if (src && type == 'image') {
-    await downloadIt(src)
+    await addImageFromUrl(src)
   }
 
   if (src && (type == 'images' || type == 'images_prompts')) {
@@ -704,7 +950,7 @@ async function show (src, id, type = 'image') {
         prompt = v[1]
       }
 
-      await downloadIt(url)
+      await addImageFromUrl(url)
     }
   }
 }
@@ -726,7 +972,7 @@ function createApp (apps, targetFilename, mainDom) {
       textInput.addEventListener('change', e => {
         e.preventDefault()
         // 更新文本
-        app.data[inp.id].inputs.text = textInput.value
+        window.app.data[inp.id].inputs.text = textInput.value;
       })
     }
   }
@@ -744,9 +990,60 @@ function createApp (apps, targetFilename, mainDom) {
       numInput.addEventListener('change', e => {
         e.preventDefault()
         // 更新数字
-        
-        app.data[inp.id].inputs.number = numInput.value
-        
+        window.app.data[inp.id].inputs.number = numInput.value
+      })
+    }
+  }
+
+  // 选项框 - 模型
+  for (let index = 0; index < app.input.length; index++) {
+    let data = app.input[index]
+    if (['CheckpointLoaderSimple', 'LoraLoader'].includes(data.class_type)) {
+      let value = data.inputs.ckpt_name || data.inputs.lora_name
+
+      // 缓存数据
+      try {
+        let v = localStorage.getItem(`_model_${data.id}_${data.class_type}`)
+        if (v) {
+          value = v
+          if (data.class_type === 'CheckpointLoaderSimple') {
+            // 更新
+            window.app.data[data.id].inputs.ckpt_name = value
+          }
+          if (data.class_type === 'LoraLoader') {
+            // 更新
+            window.app.data[data.id].inputs.lora_name = value
+          }
+        }
+      } catch (error) {}
+
+      let [div, selectDom] = createSelectWithOptions(
+        data.title,
+        Array.from(data.options, o => {
+          return {
+            value: o,
+            text: o
+          }
+        }),
+        value
+      )
+      mainDom.appendChild(div)
+
+      // 选择事件绑定
+      selectDom.addEventListener('change', e => {
+        e.preventDefault()
+        // console.log(selectDom.value)
+        if (data.class_type === 'CheckpointLoaderSimple') {
+          window.app.data[data.id].inputs.ckpt_name = selectDom.value
+        }
+        if (data.class_type === 'LoraLoader') {
+          window.app.data[data.id].inputs.lora_name = selectDom.value
+        }
+
+        localStorage.setItem(
+          `_model_${data.id}_${data.class_type}`,
+          selectDom.value
+        )
       })
     }
   }
@@ -778,10 +1075,24 @@ async function showAppsNames () {
   // const { width, height } = photoshop.activeDocument
 
   const api = new ComfyApi()
-
+  const statusDoms = document.querySelectorAll('.status')
   api.addEventListener('status', ({ detail }) => {
-    console.log('status', detail, detail.exec_info?.queue_remaining)
+    console.log('status', detail, detail?.exec_info?.queue_remaining)
+
     try {
+      if (detail === null) {
+        // 失败
+        Array.from(
+          statusDoms,
+          s => (s.innerText = 'Please check the server address.')
+        )
+      } else {
+        Array.from(
+          statusDoms,
+          s =>
+            (s.innerText = `queue_remaining:${detail?.exec_info?.queue_remaining}`)
+        )
+      }
     } catch (error) {
       console.log(error)
     }
@@ -789,11 +1100,13 @@ async function showAppsNames () {
 
   api.addEventListener('progress', ({ detail }) => {
     console.log('progress', detail)
-    const class_type = app.data[detail?.node]?.class_type || ''
+    const class_type = window.app.data[detail?.node]?.class_type || ''
     try {
       let p = `${parseFloat((100 * detail.value) / detail.max).toFixed(
         1
       )}% ${class_type}`
+      Array.from(statusDoms, s => (s.innerText = `progress:${p}`))
+
       console.log('progress', p)
     } catch (error) {}
   })
@@ -844,18 +1157,21 @@ async function showAppsNames () {
 
   api.addEventListener('execution_error', ({ detail }) => {
     console.log('execution_error', detail)
-    // show(URL.createObjectURL(detail));
+    Array.from(statusDoms, s => (s.innerText = `execution_error:${detail}`))
   })
 
   api.addEventListener('execution_start', async ({ detail }) => {
     console.log('execution_start', detail)
     try {
+      Array.from(statusDoms, s => (s.innerText = `execution_start:${detail?.prompt_id}`))
     } catch (error) {}
   })
 
-  api.api_host = hostUrl.replace('http://', '')
+  let url = new URL(hostUrl)
+  console.log('#init', hostUrl)
+  api.api_host = url.host
   api.api_base = ''
-  api.protocol = 'http'
+  api.protocol = url.protocol
   api.init()
 
   window.api = api
@@ -871,6 +1187,7 @@ async function showAppsNames () {
   const appDom = document.getElementById('apps')
   appDom.innerText = ''
   const mainDom = document.getElementById('main')
+  mainDom.innerText = ''
 
   // 选择app
   const [appsSelectDom, selectElement] = createSelectWithOptions(
@@ -888,6 +1205,8 @@ async function showAppsNames () {
 
   createApp(apps, apps[0].filename, mainDom)
 
+  Array.from(statusDoms, s => (s.innerText += ` apps:${apps.length}`))
+
   // // 尺寸调整
   // const widthInput = document.createElement('input')
   // widthInput.type = 'number'
@@ -900,5 +1219,3 @@ async function showAppsNames () {
   // appDom.appendChild(widthInput)
   // appDom.appendChild(heightInput)
 }
-
-document.getElementById('btnPopulate').addEventListener('click', showAppsNames)
