@@ -473,6 +473,7 @@ class ComfyApi extends EventTarget {
 const { entrypoints } = require('uxp')
 const { localFileSystem: fs, fileTypes, formats } = require('uxp').storage
 const photoshop = require('photoshop').app
+// const imaging = require('photoshop').imaging //此api不存在
 const { executeAsModal } = require('photoshop').core
 const batchPlay = require('photoshop').action.batchPlay
 
@@ -519,9 +520,8 @@ function createSetup (parentElement) {
   footer.appendChild(btn)
 }
 
-function handleFlyout(id) {
-  if(id==='about'){
-    
+function handleFlyout (id) {
+  if (id === 'about') {
     document.querySelector('dialog').showModal()
   }
 }
@@ -538,10 +538,10 @@ entrypoints.setup({
         createSetup(node)
         // console.log(node)
       }
-    },
+    }
     // menuItems: [
     //   {id: "about", label: "about"},
-    //   // {id: "mixlab_app", label: "Mixlab App"}, 
+    //   // {id: "mixlab_app", label: "Mixlab App"},
     // ],
     // invokeMenu(id) {
     //   handleFlyout(id);
@@ -550,64 +550,63 @@ entrypoints.setup({
 })
 
 async function arrayBufferToFile (arrayBuffer, image_name = 'output_image.png') {
-  
-    // const img = _base64ToArrayBuffer(b64Image)
-    const img = arrayBuffer
+  // const img = _base64ToArrayBuffer(b64Image)
+  const img = arrayBuffer
 
-    const img_name = image_name
+  const img_name = image_name
 
-    const folder = await fs.getTemporaryFolder()
-    const file = await folder.createFile(img_name, { overwrite: true })
+  const folder = await fs.getTemporaryFolder()
+  const file = await folder.createFile(img_name, { overwrite: true })
 
-    await file.write(img, { format: formats.binary })
+  await file.write(img, { format: formats.binary })
 
-    const token = await fs.createSessionToken(file) // batchPlay requires a token on _path
+  const token = await fs.createSessionToken(file) // batchPlay requires a token on _path
 
-    let place_event_result
-    let imported_layer
-    await executeAsModal(async () => {
-      const result = await batchPlay(
-        [
-          {
-            _obj: 'placeEvent',
-            // ID: 6,
-            null: {
-              _path: token,
-              _kind: 'local'
-            },
-            freeTransformCenterState: {
-              _enum: 'quadCenterState',
-              _value: 'QCSAverage'
-            },
-            offset: {
-              _obj: 'offset',
-              horizontal: {
-                _unit: 'pixelsUnit',
-                _value: 0
-              },
-              vertical: {
-                _unit: 'pixelsUnit',
-                _value: 0
-              }
-            },
-            _isCommand: true,
-            _options: {
-              dialogOptions: 'dontDisplay'
-            }
-          }
-        ],
+  let place_event_result
+  let imported_layer
+  await executeAsModal(async () => {
+    const result = await batchPlay(
+      [
         {
-          synchronousExecution: true,
-          modalBehavior: 'execute'
+          _obj: 'placeEvent',
+          // ID: 6,
+          null: {
+            _path: token,
+            _kind: 'local'
+          },
+          freeTransformCenterState: {
+            _enum: 'quadCenterState',
+            _value: 'QCSAverage'
+          },
+          offset: {
+            _obj: 'offset',
+            horizontal: {
+              _unit: 'pixelsUnit',
+              _value: 0
+            },
+            vertical: {
+              _unit: 'pixelsUnit',
+              _value: 0
+            }
+          },
+          _isCommand: true,
+          _options: {
+            dialogOptions: 'dontDisplay'
+          }
         }
-      )
-      console.log('placeEmbedd batchPlay result: ', result)
+      ],
+      {
+        synchronousExecution: true,
+        modalBehavior: 'execute'
+      }
+    )
+    console.log('placeEmbedd batchPlay result: ', result)
 
-      place_event_result = result[0]
-      imported_layer = await photoshop.activeDocument.activeLayers[0]
-    })
-    return imported_layer
-  
+    place_event_result = result[0]
+    imported_layer = await photoshop.activeDocument.activeLayers[0]
+  })
+  return imported_layer
+
   // return place_event_result
 }
 
@@ -781,6 +780,31 @@ async function getMyApps (
   return data
 }
 
+// TODO ps插件不支持File类型，需要调整
+async function uploadImage (arrayBuffer, fileType = '.png', filename) {
+  const body = new FormData()
+
+  const fileName = (filename || new Date().getTime()) + fileType
+  // 直接传
+  body.append('image', arrayBuffer, fileName)
+
+  const url = hostUrl
+
+  const resp = await fetch(`${url}/upload/image`, {
+    method: 'POST',
+    body
+  })
+
+  // console.log(resp)
+  let data = await resp.json()
+  let { name, subfolder } = data
+  let src = `${url}/view?filename=${encodeURIComponent(
+    name
+  )}&type=input&subfolder=${subfolder}&rand=${Math.random()}`
+
+  return { url: src, name }
+}
+
 function runMyApp (url, data) {
   fetch(`${url}/prompt`, {
     method: 'POST',
@@ -866,6 +890,115 @@ function unLockedCurrentLayerForTextInput () {
   }
 }
 
+// 选区范围
+
+async function getSelectionInfoCommand () {
+  // console.warn('getSelectionInfoCommand is deprecated use SelectionInfoDesc')
+  const result = await batchPlay(
+    [
+      {
+        _obj: 'get',
+        _target: [
+          {
+            _property: 'selection'
+          },
+          {
+            _ref: 'document',
+            _id: photoshop.activeDocument._id
+          }
+        ],
+        _options: {
+          dialogOptions: 'dontDisplay'
+        }
+      }
+    ],
+    {
+      synchronousExecution: true,
+      modalBehavior: 'execute'
+    }
+  )
+
+  return result
+}
+
+function isSelectionValid (selection) {
+  // console.warn(
+  //     'isSelectionValid is deprecated use selection.isSelectionValid instead'
+  // )
+  if (
+    selection && // check if the selection is defined
+    selection.hasOwnProperty('left') &&
+    selection.hasOwnProperty('right') &&
+    selection.hasOwnProperty('top') &&
+    selection.hasOwnProperty('bottom')
+  ) {
+    return true
+  }
+
+  return false
+}
+
+// 获取选区范围
+async function getSelectionInfoExe () {
+  // console.log('getSelectionInfo was called')
+  // console.warn(
+  //     'getSelectionInfoExe is deprecated use selection.getSelectionInfoExe instead'
+  // )
+  try {
+    const selection = (await executeAsModal(getSelectionInfoCommand))[0]
+      .selection
+
+    if (isSelectionValid(selection)) {
+      let selection_info = {
+        left: selection.left._value,
+        right: selection.right._value,
+        bottom: selection.bottom._value,
+        top: selection.top._value,
+        height: selection.bottom._value - selection.top._value,
+        width: selection.right._value - selection.left._value
+      }
+      // console.dir({selection_info})
+      return selection_info
+    }
+  } catch (e) {
+    console.warn('selection info error', e)
+  }
+}
+
+async function getImageFromLayerByBound () {
+  // 选区
+  let bound = await getSelectionInfoExe()
+
+  // 取base64 ，上传
+  let file
+  const folder = await fs.getTemporaryFolder()
+  await executeAsModal(
+    async () => {
+      const canvas_image_name = 'canvas_image.png'
+      file = await folder.createFile(canvas_image_name, {
+        overwrite: true
+      })
+
+      const currentDocument = photoshop.activeDocument
+      await currentDocument.saveAs.png(file, null, true)
+      //save file end
+
+      //read the saved image.png
+    },
+
+    { commandName: 'readPng' }
+  )
+
+  const arrayBuffer = await file.read({
+    format: formats.binary
+  })
+
+  const { url, name } = await uploadImage(arrayBuffer)
+
+  console.log(url, name)
+  return { url, name }
+}
+
 // 读取url里的图片，并粘贴到ps里
 async function downloadIt (link) {
   const res = await fetch(link)
@@ -916,11 +1049,10 @@ async function downloadItExe (link) {
 
 async function addImageFromUrl (link) {
   const res = await fetch(link)
-  
-  const img = await res.arrayBuffer();
 
-  let imageName='output.png'
+  const img = await res.arrayBuffer()
 
+  let imageName = 'output.png'
   // for (let index = 0; index < window.app.input.length; index++) {
   //   const inp = app.input[index]
   //   if (inp.inputs?.text) {
@@ -929,11 +1061,11 @@ async function addImageFromUrl (link) {
   // }
   // imageName=imageName?(imageName+'.png'):'output.png'
   // console.log(imageName)
-  await arrayBufferToFile(img,imageName)
+  await arrayBufferToFile(img, imageName)
 }
 
 async function show (src, id, type = 'image') {
-  console.log('#show',type, id, src)
+  console.log('#show', type, id, src)
 
   if (src && type == 'image') {
     await addImageFromUrl(src)
@@ -966,13 +1098,14 @@ function createApp (apps, targetFilename, mainDom) {
   // 文本输入
   for (let index = 0; index < app.input.length; index++) {
     const inp = app.input[index]
-    if (inp.inputs?.text) {
+    // 节点可能不存在
+    if (inp?.inputs?.text) {
       const [div, textInput] = createTextInput(inp.title, inp.inputs.text)
       mainDom.appendChild(div)
       textInput.addEventListener('change', e => {
         e.preventDefault()
         // 更新文本
-        window.app.data[inp.id].inputs.text = textInput.value;
+        window.app.data[inp.id].inputs.text = textInput.value
       })
     }
   }
@@ -980,7 +1113,8 @@ function createApp (apps, targetFilename, mainDom) {
   // 数字输入number
   for (let index = 0; index < app.input.length; index++) {
     const inp = app.input[index]
-    if (inp.inputs?.number) {
+    // 节点可能不存在
+    if (inp?.inputs?.number) {
       const [div, numInput] = createNumberSelectInput(
         inp.title,
         inp.inputs.number,
@@ -998,7 +1132,11 @@ function createApp (apps, targetFilename, mainDom) {
   // 选项框 - 模型
   for (let index = 0; index < app.input.length; index++) {
     let data = app.input[index]
-    if (['CheckpointLoaderSimple', 'LoraLoader'].includes(data.class_type)) {
+    // 节点可能不存在
+    if (
+      data &&
+      ['CheckpointLoaderSimple', 'LoraLoader'].includes(data.class_type)
+    ) {
       let value = data.inputs.ckpt_name || data.inputs.lora_name
 
       // 缓存数据
@@ -1163,7 +1301,10 @@ async function showAppsNames () {
   api.addEventListener('execution_start', async ({ detail }) => {
     console.log('execution_start', detail)
     try {
-      Array.from(statusDoms, s => (s.innerText = `execution_start:${detail?.prompt_id}`))
+      Array.from(
+        statusDoms,
+        s => (s.innerText = `execution_start:${detail?.prompt_id}`)
+      )
     } catch (error) {}
   })
 
