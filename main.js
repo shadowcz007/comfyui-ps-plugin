@@ -516,8 +516,8 @@ function createSetup (parentElement) {
 
   btn.innerText = 'Load ComfyUI App'
 
-  btn.addEventListener('click',async () => {
-    btn.style.background = 'darkblue';
+  btn.addEventListener('click', async () => {
+    btn.style.background = 'darkblue'
     // console.log(await navigator.clipboard.read());
 
     showAppsNames()
@@ -688,7 +688,6 @@ function createTextInput (title, defaultValue, isSingle = false) {
   nameLabel.textContent = title
   div.appendChild(nameLabel)
 
- 
   // Create an input field for the image name
   const textInput = document.createElement('textarea')
   textInput.value = defaultValue
@@ -706,17 +705,16 @@ function createTextInput (title, defaultValue, isSingle = false) {
 
   textInput.addEventListener('blur', async e => {
     unLockedCurrentLayerForTextInput()
-  });
-
-  // 粘贴文本
-  let pasteFromClipboard=document.createElement('div');
-  nameLabel.appendChild(pasteFromClipboard);
-  pasteFromClipboard.innerText="+"
-  pasteFromClipboard.addEventListener('click',async e=>{
-   let obj=await navigator.clipboard.read();
-   if(obj['text/plain'])  textInput.value=obj['text/plain']
   })
 
+  // 粘贴文本
+  let pasteFromClipboard = document.createElement('div')
+  nameLabel.appendChild(pasteFromClipboard)
+  pasteFromClipboard.innerText = '+'
+  pasteFromClipboard.addEventListener('click', async e => {
+    let obj = await navigator.clipboard.read()
+    if (obj['text/plain']) textInput.value = obj['text/plain']
+  })
 
   return [div, textInput]
 }
@@ -931,8 +929,27 @@ function unLockedCurrentLayerForTextInput () {
   }
 }
 
-// 选区范围
+function setArea () {
+  // 全选选区
+  ;[
+    {
+      _obj: 'set',
+      _target: { _ref: 'channel', _property: 'selection' },
+      to: {
+        _obj: 'rectangle',
+        top: { _unit: 'pixelsUnit', _value: 0 },
+        left: { _unit: 'pixelsUnit', _value: 0 },
+        bottom: {
+          _unit: 'pixelsUnit',
+          _value: photoshop.activeDocument.height
+        },
+        right: { _unit: 'pixelsUnit', _value: photoshop.activeDocument.width }
+      }
+    }
+  ]
+}
 
+// 选区范围
 async function getSelectionInfoCommand () {
   // console.warn('getSelectionInfoCommand is deprecated use SelectionInfoDesc')
   const result = await batchPlay(
@@ -1006,11 +1023,8 @@ async function getSelectionInfoExe () {
   }
 }
 
-async function getImageFromLayerByBound () {
-  // 选区
-  let bound = await getSelectionInfoExe()
-  if (bound == undefined) return { base64: null, buffer: null }
-  // 取base64 ，上传
+async function getImageFromActiveLayer() {
+  // 拷贝图层的图片
   let file
   try {
     const folder = await fs.getTemporaryFolder()
@@ -1022,13 +1036,43 @@ async function getImageFromLayerByBound () {
         })
 
         const currentDocument = photoshop.activeDocument
-        await currentDocument.save(file, formats.PNG)
+        // 所有图层，当前图层
+        const layers = currentDocument.layers
+        let visibles = {}
+        for (const layer of layers) {
+          visibles[layer._id] = layer.visible
+        }
+        // 隐藏不在激活范围的图层
+        const als = currentDocument.activeLayers
+        for (const layer of layers) {
+          let isA = false
+          for (const al of als) {
+            if (al._id === layer._id) {
+              isA = true
+            }
+          }
+          if (isA === false) {
+            // 不在激活范围
+            layer.visible = false
+          }
+        }
+
         //save file end
+        if (currentDocument.saveAs) {
+          await currentDocument.saveAs.png(file, { compression: 6 }, true)
+        } else {
+          await currentDocument.save(file, formats.PNG)
+        }
+
+        // 恢复图层状态
+        for (const layer of layers) {
+          layer.visible = visibles[layer._id]
+        }
 
         //read the saved image.png
       },
 
-      { commandName: 'readPng' }
+      { commandName: 'savePng' }
     )
   } catch (error) {
     console.log(error)
@@ -1038,7 +1082,16 @@ async function getImageFromLayerByBound () {
   const arrayBuffer = await file.read({
     format: formats.binary
   })
+  return arrayBuffer
+}
 
+async function getImageFromLayerByBound () {
+  // 选区
+  let bound = await getSelectionInfoExe()
+  if (bound == undefined) return { base64: null, buffer: null }
+
+  // console.log(file)
+  const arrayBuffer = await getImageFromActiveLayer()
   // const { url, name } = await uploadImage(arrayBuffer)
 
   // console.log(arrayBuffer)
