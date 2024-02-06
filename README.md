@@ -29,6 +29,8 @@ Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](http
 
 - Now you can use the LoadImage node as input to implement the image-to-image workflow.
 
+- supports MASK.
+
 ![img-to-img](./examples/img-to-img.png)
 
 
@@ -44,11 +46,11 @@ Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](http
 
 [developer.adobe.com](https://developer.adobe.com/photoshop/uxp/2022/)
 
-
+* 一些开发过程问题的记录：
 > 本插件目前支持 22.5.0，更高的版本未测试。
 > 暂未支持：Imaging API Beta , Photoshop 24.2 (February 2023)
 > clipboard只能读取文本
-
+> uxp的打包工具会把隐藏目录也打进去，增加了包体大小……
 
 ##### 答疑交流
 

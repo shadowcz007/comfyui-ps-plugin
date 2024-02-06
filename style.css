@@ -24,8 +24,20 @@ body {
 
   .card{
     margin-top: 18px;
+    display: flex;
+    flex-direction: column;
   }
-
+  .card label{
+    margin-bottom: 10px;
+  }
+  .card .tag{
+    background: #00ff7e;
+    color: black;
+    padding: 2px;
+    margin-left: 12px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
   textarea{
     height: 100px;
     margin: 0;

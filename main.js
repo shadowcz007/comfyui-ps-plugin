@@ -472,7 +472,7 @@ class ComfyApi extends EventTarget {
 
 const { entrypoints } = require('uxp')
 const { localFileSystem: fs, fileTypes, formats } = require('uxp').storage
-const photoshop = require('photoshop').app
+const { app: photoshop, constants } = require('photoshop')
 // const imaging = require('photoshop').imaging //此api不存在
 const { executeAsModal } = require('photoshop').core
 const batchPlay = require('photoshop').action.batchPlay
@@ -664,6 +664,13 @@ function createImageInput (title, defaultValue) {
   nameLabel.textContent = title
   div.appendChild(nameLabel)
 
+  // 从选区
+  // let selectionTag = document.createElement('em')
+  // selectionTag.innerText = '#From Selection'
+  // selectionTag.className = 'tag'
+  // nameLabel.appendChild(selectionTag)
+
+
   // Create an input field for the image name
   const imgInput = document.createElement('img')
   imgInput.src = base64Df
@@ -721,7 +728,7 @@ function createTextInput (title, defaultValue, isSingle = false) {
 
 // 数字输入
 function createNumberSelectInput (title, defaultValue, opts) {
-  const { step, min, max } = opts
+  const { step, min, max, unit } = opts
 
   // const [div, numInput] = createSelectWithOptions(
   //   title,
@@ -742,6 +749,8 @@ function createNumberSelectInput (title, defaultValue, opts) {
   nameLabel.textContent = title
   div.appendChild(nameLabel)
 
+  let inpDiv = document.createElement('div')
+  div.appendChild(inpDiv)
   // Create an input field for the image name
   const numInput = document.createElement('input')
   numInput.type = 'range'
@@ -750,16 +759,16 @@ function createNumberSelectInput (title, defaultValue, opts) {
   numInput.max = max || 255
   numInput.step = String(step || 1)
 
-  div.appendChild(numInput)
+  inpDiv.appendChild(numInput)
 
   const value = document.createElement('label')
-  value.innerText = defaultValue
+  value.innerText = defaultValue + (unit ? unit : '')
 
-  numInput.addEventListener('change', e => {
-    value.innerText = numInput.value
+  numInput.addEventListener('input', e => {
+    value.innerText = numInput.value + (unit ? unit : '')
   })
 
-  div.appendChild(value)
+  inpDiv.appendChild(value)
 
   return [div, numInput]
 }
@@ -1198,6 +1207,269 @@ async function createMaskFromSelect () {
   return res
 }
 
+// 24版本不支持
+async function createRectSelect (bound) {
+  // const doc = photoshop.activeDocument
+  // await doc.selection.selectRectangle(
+  //   {
+  //     top: bound.top,
+  //     left: bound.left,
+  //     bottom: bound.bottom,
+  //     right: bound.right
+  //   },
+  //   constants.SelectionType.REPLACE
+  // )
+
+  // 添加到 选区
+  var command = {
+    _obj: 'addTo',
+    _target: [{ _property: 'selection', _ref: 'channel' }],
+    to: {
+      _obj: 'rectangle',
+      bottom: { _unit: 'pixelsUnit', _value: bound.bottom },
+      left: { _unit: 'pixelsUnit', _value: bound.left },
+      right: { _unit: 'pixelsUnit', _value: bound.right },
+      top: { _unit: 'pixelsUnit', _value: bound.top }
+    }
+  }
+
+  await executeAsModal(
+    async () => {
+      await batchPlay([command], { modalBehavior: 'execute' })
+    },
+    { commandName: 'createRectSelect' }
+  )
+}
+
+// 从图层的蒙版里创建mask
+async function createMaskFromLayer () {
+  let EXPORT_MASK_FILENAME = `mask_${new Date().getTime()}.png`
+  let command = [
+    // 选择 蒙版通道
+    {
+      _obj: 'select',
+      _target: [{ _enum: 'channel', _ref: 'channel', _value: 'mask' }],
+      makeVisible: false
+    },
+    // 设置 选区
+    {
+      _obj: 'set',
+      _target: [{ _property: 'selection', _ref: 'channel' }],
+      to: { _enum: 'ordinal', _ref: 'channel', _value: 'targetEnum' }
+    },
+    // 拷贝
+    { _obj: 'copyEvent', copyHint: 'pixels' },
+    // 粘贴
+    {
+      _obj: 'paste',
+      antiAlias: { _enum: 'antiAliasType', _value: 'antiAliasNone' },
+      as: { _class: 'pixel' }
+    },
+    // 设置 选区
+    {
+      _obj: 'set',
+      _target: [{ _property: 'selection', _ref: 'channel' }],
+      to: { _enum: 'channel', _ref: 'channel', _value: 'transparencyEnum' }
+    },
+    // 反向
+    { _obj: 'inverse' },
+    // 填充
+    {
+      _obj: 'fill',
+      mode: { _enum: 'blendMode', _value: 'normal' },
+      opacity: { _unit: 'percentUnit', _value: 100.0 },
+      using: { _enum: 'fillContents', _value: 'foregroundColor' }
+    },
+    // 设置 选区
+    {
+      _obj: 'set',
+      _target: [{ _property: 'selection', _ref: 'channel' }],
+      to: { _enum: 'ordinal', _value: 'none' }
+    },
+    // 反相
+    { _obj: 'invert' },
+    {
+      _obj: 'set',
+      _target: [{ _ref: 'layer', _enum: 'ordinal', _value: 'targetEnum' }],
+      to: { _obj: 'layer', name: EXPORT_MASK_FILENAME },
+      _options: { dialogOptions: 'dontDisplay' },
+      _isCommand: true
+    }
+  ]
+
+  let maskBuffer
+
+  await executeAsModal(
+    async () => {
+      await batchPlay(command, { modalBehavior: 'execute' })
+      maskBuffer = await getImageFromActiveLayer()
+
+      await batchPlay(
+        [
+          {
+            _obj: 'select',
+            _target: [{ _ref: 'layer', _name: EXPORT_MASK_FILENAME }],
+            makeVisible: false,
+            _options: { dialogOptions: 'dontDisplay' }
+          }
+        ],
+        { modalBehavior: 'execute' }
+      )
+
+      const layers = photoshop.activeDocument.layers
+      for (const layer of layers) {
+        if (layer.name === EXPORT_MASK_FILENAME) layer.delete()
+      }
+    },
+    { commandName: 'createMaskFromLayer' }
+  )
+
+  return maskBuffer
+}
+
+async function createMaskFromLayerDone () {
+  let result = {
+    imgBase64: null,
+    maskBase64: null,
+    imgBuffer: null,
+    maskBuffer: null
+  }
+
+  let imgBuffer = await getImageFromActiveLayer()
+  let maskBuffer = await createMaskFromLayer()
+
+  const img = await Jimp.read(imgBuffer)
+  const mask = await Jimp.read(maskBuffer)
+
+  result.imgBase64 = await img.getBase64Async(Jimp.MIME_PNG)
+  result.imgBuffer = imgBuffer
+
+  // alpha通道的处理
+  const backupImage = mask.clone()
+  backupImage.rgba(true)
+  backupImage.scan(
+    0,
+    0,
+    backupImage.bitmap.width,
+    backupImage.bitmap.height,
+    function (x, y, idx) {
+      const g = this.bitmap.data[idx + 1]
+      if (g === 255) {
+        this.bitmap.data[idx + 3] = 0
+      } else {
+        this.bitmap.data[idx + 3] = 255
+      }
+      this.bitmap.data[idx] = 0
+      this.bitmap.data[idx + 1] = 0
+      this.bitmap.data[idx + 2] = 0
+    }
+  )
+
+  result.maskBase64 = await backupImage.getBase64Async(Jimp.MIME_PNG)
+  result.maskBuffer = await backupImage.getBufferAsync(Jimp.MIME_PNG)
+
+  // 用来预览的
+  mask.invert()
+  img.mask(mask)
+
+  result.preview = await img.getBase64Async(Jimp.MIME_PNG)
+
+  return result
+}
+
+// 创建LoadImage的数据,img 和 mask
+async function createImageAndMaskFromBound (margin = 48, fixBound = null) {
+  let result = {
+    imgBase64: null,
+    maskBase64: null,
+    imgBuffer: null,
+    maskBuffer: null
+  }
+
+  let bound = fixBound
+  if (!bound) {
+    bound = await getSelectionInfoExe()
+  }
+
+  if (!bound) return result
+
+  const doc = photoshop.activeDocument
+
+  let left = Math.max(0, bound.left - margin),
+    top = Math.max(0, bound.top - margin),
+    width = bound.width + margin * 2,
+    height = bound.height + margin * 2,
+    bottom = Math.min(doc.height, bound.bottom + margin),
+    right = Math.min(doc.width, bound.right + margin)
+
+  result.bound = {
+    left,
+    right,
+    bottom,
+    top
+  }
+
+  // image
+  let imgBuffer = await getImageFromActiveLayer()
+  const img = await Jimp.read(imgBuffer)
+  let cropped_img = await img.crop(left, top, width, height)
+  result.imgBase64 = await cropped_img.getBase64Async(Jimp.MIME_PNG)
+  result.imgBuffer = await cropped_img.getBufferAsync(Jimp.MIME_PNG)
+
+  // mask
+  let mask
+  await executeAsModal(
+    async () => {
+      mask = await generateMaskFromSelection()
+    },
+    { commandName: 'createMask' }
+  )
+
+  if (mask) {
+    const { base64, arrayBuffer } = mask
+    const maskIm = await Jimp.read(arrayBuffer)
+
+    let cropped_maskIm = await maskIm.crop(left, top, width, height)
+
+    // alpha通道的处理
+    const backupImage = cropped_maskIm.clone()
+    backupImage.rgba(true)
+    backupImage.scan(
+      0,
+      0,
+      backupImage.bitmap.width,
+      backupImage.bitmap.height,
+      function (x, y, idx) {
+        const g = this.bitmap.data[idx + 1]
+        if (g === 255) {
+          this.bitmap.data[idx + 3] = 0
+        } else {
+          this.bitmap.data[idx + 3] = 255
+        }
+        this.bitmap.data[idx] = 0
+        this.bitmap.data[idx + 1] = 0
+        this.bitmap.data[idx + 2] = 0
+      }
+    )
+
+    result.maskBase64 = await backupImage.getBase64Async(Jimp.MIME_PNG)
+    result.maskBuffer = await backupImage.getBufferAsync(Jimp.MIME_PNG)
+
+    // 用来预览的
+    cropped_maskIm.invert()
+    cropped_img.mask(cropped_maskIm)
+
+    result.preview = await cropped_img.getBase64Async(Jimp.MIME_PNG)
+
+    // 恢复选区
+    await createRectSelect({ ...bound })
+
+    return result
+  }
+
+  return result
+}
+
 async function getImageFromActiveLayer () {
   // 拷贝图层的图片
   let file
@@ -1386,57 +1658,115 @@ function createApp (apps, targetFilename, mainDom) {
     const inp = app.input[index]
     // 节点可能不存在
     if (inp?.inputs?.image && ['LoadImage'].includes(inp.class_type)) {
+      // inp.title += inp.options?.hasMask ? `#MASK` : ''
+
       const [div, imgInput] = createImageInput(inp.title, inp.inputs.image)
       mainDom.appendChild(div)
 
+      // 有mask作为输入
+      if (inp.options?.hasMask) {
+        // tag 标识是mask作为输入
+        let tag = document.createElement('em')
+        tag.innerText = '#From Layer'
+        tag.className = 'tag'
+        div.querySelector('label').appendChild(tag)
+        // 从图层的蒙版通道里创建mask
+        tag.addEventListener('click', async e => {
+          let loadImageNodeData = await createMaskFromLayerDone()
+
+          const {
+            imgBase64,
+            imgBuffer,
+            maskBase64,
+            maskBuffer,
+            preview, 
+          } = loadImageNodeData || {}
+
+          // if (!imgBase64 || !maskBase64)
+          //   return photoshop.showAlert(`Please select the region`) 
+
+          // 更新
+          if (preview != imgInput.src) {
+            imgInput.src = preview
+
+            const { url: imgurl } = await uploadImage(imgBuffer)
+
+            const { name } = await uploadMask(maskBuffer, imgurl)
+            // console.log(imgurl, name)
+
+            // // 更新图片
+            window.app.data[inp.id].inputs.image = name
+          }
+        })
+
+        // 手动选区
+        // 提供外扩的选项
+        const [outNum, outNumInput] = createNumberSelectInput(`Out`, 48, {
+          min: 0,
+          max: 1024,
+          step: 1,
+          unit: 'px'
+        })
+        mainDom.appendChild(outNum)
+
+        outNumInput.addEventListener('change', async e => {
+          // 更新
+          app.input[index].options.out = outNumInput.value
+        })
+      }
+
       // 点击后从当前选区获取图片
       imgInput.addEventListener('click', async e => {
-        // console.log('mouserover')
-        const { base64, buffer } = await getImageFromLayerByBound()
-        if (base64 === null) {
-          // 没有选择选区
-          photoshop.showAlert(`Please select the region`)
-          return
-        }
-        if (base64 != imgInput.src) {
-          imgInput.src = base64
-          // console.log(base64)
-          const { url, name } = await uploadImage(buffer)
-          console.log(url)
-          // 输入做记录
-          app.input[index].inputs.imageUrl = url
-          // 更新图片
-          window.app.data[inp.id].inputs.image = name
-        }
-      })
+        // 有mask输出
+        if (inp.options?.hasMask) {
+          let loadImageNodeData = await createImageAndMaskFromBound(
+            app.input[index].options.out
+          )
+          const {
+            imgBase64,
+            imgBuffer,
+            maskBase64,
+            maskBuffer,
+            preview,
+            bound
+          } = loadImageNodeData || {}
 
-      // mask
-      const [div2, maskInput] = createImageInput(inp.title, inp.inputs.image)
-      // mainDom.appendChild(div2)
-      // 点击后从当前选区获取图片
-      maskInput.addEventListener('click', async e => {
-        // 图片没有选择
-        let imgurl = app.input[index].inputs.imageUrl
-        if (!imgurl) return
+          if (!imgBase64 || !maskBase64)
+            return photoshop.showAlert(`Please select the region`)
 
-        let mask = await createMaskFromSelect()
-        const { base64, arrayBuffer } = mask || {}
-        // mask.base64,mask.name
-        // const { base64, buffer } = await getImageFromLayerByBound()
-        if (base64 === null) {
-          // 没有选择选区
-          photoshop.showAlert(`Please select the region`)
-          return
-        }
-        if (base64 != maskInput.src) {
-          maskInput.src = base64
-          // console.log(base64)
+          app.input[index].options.bound = bound
 
-          const { url, name } = await uploadMask(arrayBuffer, imgurl)
-          console.log(url, name)
+          // 更新
+          if (preview != imgInput.src) {
+            imgInput.src = preview
 
-          // // 更新图片
-          window.app.data[inp.id].inputs.image = name
+            const { url: imgurl } = await uploadImage(imgBuffer)
+
+            const { name } = await uploadMask(maskBuffer, imgurl)
+            // console.log(imgurl, name)
+
+            // // 更新图片
+            window.app.data[inp.id].inputs.image = name
+          }
+        } else {
+          // 没有mask输出
+          // console.log('mouserover')
+          const { base64, buffer } = await getImageFromLayerByBound()
+          if (base64 === null) {
+            // 没有选择选区
+            photoshop.showAlert(`Please select the region`)
+            return
+          }
+          if (base64 != imgInput.src) {
+            imgInput.src = base64
+            // console.log(base64)
+            const { url, name } = await uploadImage(buffer)
+            // console.log(url)
+            // 输入做记录
+            app.input[index].inputs.imageUrl = url
+            // 更新图片
+            window.app.data[inp.id].inputs.image = name
+          }
         }
       })
     }
@@ -1542,6 +1872,10 @@ function createApp (apps, targetFilename, mainDom) {
     e.preventDefault()
     const seed = app.seed
     let prompt = app.data
+
+    // mask的选区处理
+    // let left=0,right=0,bottom=0,top=0;
+    // app.input[index].options.bound
 
     // seed 为 fixed 处理成random
     for (const key in seed) {
