@@ -33,6 +33,8 @@ Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](http
 
 ![img-to-img](./examples/img-to-img.png)
 
+![mask](./examples/img-to-img-mask.png)
+
 
 ## download
 [comfyui-mixlab-ps-plugin_PS.ccx](./dist/comfyui-mixlab-ps-plugin_PS.ccx)
