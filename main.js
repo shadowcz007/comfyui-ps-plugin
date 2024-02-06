@@ -844,6 +844,42 @@ async function uploadImage (arrayBuffer, fileType = '.png', filename) {
   return { url: src, name }
 }
 
+async function uploadMask (arrayBuffer, imgurl) {
+  const body = new FormData()
+  const filename = 'clipspace-mask-' + performance.now() + '.png'
+
+  let original_url = new URL(imgurl)
+
+  const original_ref = { filename: original_url.searchParams.get('filename') }
+
+  let original_subfolder = original_url.searchParams.get('subfolder')
+  if (original_subfolder) original_ref.subfolder = original_subfolder
+
+  let original_type = original_url.searchParams.get('type')
+  if (original_type) original_ref.type = original_type
+
+  body.append('image', arrayBuffer, filename)
+  body.append('original_ref', JSON.stringify(original_ref))
+  body.append('type', 'input')
+  body.append('subfolder', 'clipspace')
+
+  const url = hostUrl
+
+  const resp = await fetch(`${url}/upload/mask`, {
+    method: 'POST',
+    body
+  })
+
+  // console.log(resp)
+  let data = await resp.json()
+  let { name, subfolder, type } = data
+  let src = `${url}/view?filename=${encodeURIComponent(
+    name
+  )}&type=${type}&subfolder=${subfolder}&rand=${Math.random()}`
+
+  return { url: src, name: 'clipspace/' + name }
+}
+
 function runMyApp (url, data) {
   fetch(`${url}/prompt`, {
     method: 'POST',
@@ -1023,7 +1059,146 @@ async function getSelectionInfoExe () {
   }
 }
 
-async function getImageFromActiveLayer() {
+async function generateMaskFromSelection () {
+  const EXPORT_MASK_FILENAME = 'mask_' + new Date().getTime()
+
+  // 把所有图层记录状态后，隐藏
+  let visibles = {}
+  let layers = photoshop.activeDocument.layers
+  for (const layer of layers) {
+    visibles[layer._id] = layer.visible
+  }
+  for (const layer of layers) {
+    layer.visible = false
+  }
+
+  const createLayerWithColor = (red, grain, blue) => [
+    {
+      _obj: 'make',
+      _target: { _ref: 'layer' }
+    },
+    {
+      _obj: 'make',
+      _target: { _ref: 'contentLayer' },
+      using: {
+        _obj: 'contentLayer',
+        type: {
+          _obj: 'solidColorLayer',
+          color: { _obj: 'RGBColor', red, grain, blue }
+        }
+      },
+      _options: { dialogOptions: 'dontDisplay' }
+    },
+    {
+      _obj: 'rasterizeLayer',
+      _target: [{ _ref: 'layer', _enum: 'ordinal', _value: 'targetEnum' }],
+      _options: { dialogOptions: 'dontDisplay' }
+    },
+    {
+      _obj: 'delete',
+      _target: [{ _ref: 'channel', _enum: 'channel', _value: 'mask' }],
+      apply: true,
+      _options: { dialogOptions: 'dontDisplay' }
+    }
+  ]
+
+  // const bringLayerToFront = isKeepCurrentIndex => {
+  //   if (isKeepCurrentIndex) return []
+  //   return [
+  //     {
+  //       _obj: 'move',
+  //       _target: { _ref: 'layer', _enum: 'ordinal', _value: 'targetEnum' },
+  //       to: { _ref: 'layer', _enum: 'ordinal', _value: 'front' },
+  //       _options: { dialogOptions: 'dontDisplay' }
+  //     }
+  //   ]
+  // }
+
+  const setNewName = {
+    _obj: 'set',
+    _target: [{ _ref: 'layer', _enum: 'ordinal', _value: 'targetEnum' }],
+    to: { _obj: 'layer', name: EXPORT_MASK_FILENAME },
+    _options: { dialogOptions: 'dontDisplay' },
+    _isCommand: true
+  }
+
+  // 创建白色图层
+  await batchPlay(createLayerWithColor(255, 255, 255), {
+    modalBehavior: 'execute'
+  })
+
+  try {
+    let layers = photoshop.activeDocument.activeLayers
+    layers[0].bringToFront()
+  } catch (error) {}
+
+  const cmd = [
+    setNewName,
+    ...createLayerWithColor(0, 0, 0),
+    {
+      _obj: 'select',
+      _target: [{ _ref: 'layer', _name: EXPORT_MASK_FILENAME }],
+      makeVisible: false,
+      _options: { dialogOptions: 'dontDisplay' }
+    }
+  ]
+  await batchPlay(cmd, { modalBehavior: 'execute' })
+
+  // we need to separate select and bringLayerToFront() into 2 batchPlays
+  // because old photoshop versions have a bug and ignore bringLayerToFront() if we get a new selection
+  // https://forums.creativeclouddeveloper.com/t/move-layer-bug/3458/2
+
+  try {
+    let layers = photoshop.activeDocument.activeLayers
+    layers.pop().bringToFront()
+  } catch (error) {}
+
+  await batchPlay(
+    [
+      {
+        _obj: 'mergeLayersNew',
+        _options: { dialogOptions: 'dontDisplay' }
+      },
+      setNewName
+    ],
+    { modalBehavior: 'execute' }
+  )
+
+  let maskImg = await getImageFromActiveLayer()
+  console.log(maskImg)
+
+  const im = await Jimp.read(maskImg)
+  let base64 = await im.getBase64Async(Jimp.MIME_PNG)
+
+  layers = photoshop.activeDocument.layers
+
+  // 恢复图层显示
+  for (const layer of layers) {
+    if (visibles[layer._id] != undefined) {
+      layer.visible = visibles[layer._id]
+    }
+    if (layer.name === EXPORT_MASK_FILENAME) layer.delete()
+  }
+
+  return {
+    base64,
+    arrayBuffer: maskImg
+  }
+}
+
+// 从选区创建mask
+async function createMaskFromSelect () {
+  let res
+  await executeAsModal(
+    async () => {
+      res = await generateMaskFromSelection()
+    },
+    { commandName: 'createMask' }
+  )
+  return res
+}
+
+async function getImageFromActiveLayer () {
   // 拷贝图层的图片
   let file
   try {
@@ -1228,7 +1403,39 @@ function createApp (apps, targetFilename, mainDom) {
           // console.log(base64)
           const { url, name } = await uploadImage(buffer)
           console.log(url)
+          // 输入做记录
+          app.input[index].inputs.imageUrl = url
           // 更新图片
+          window.app.data[inp.id].inputs.image = name
+        }
+      })
+
+      // mask
+      const [div2, maskInput] = createImageInput(inp.title, inp.inputs.image)
+      // mainDom.appendChild(div2)
+      // 点击后从当前选区获取图片
+      maskInput.addEventListener('click', async e => {
+        // 图片没有选择
+        let imgurl = app.input[index].inputs.imageUrl
+        if (!imgurl) return
+
+        let mask = await createMaskFromSelect()
+        const { base64, arrayBuffer } = mask || {}
+        // mask.base64,mask.name
+        // const { base64, buffer } = await getImageFromLayerByBound()
+        if (base64 === null) {
+          // 没有选择选区
+          photoshop.showAlert(`Please select the region`)
+          return
+        }
+        if (base64 != maskInput.src) {
+          maskInput.src = base64
+          // console.log(base64)
+
+          const { url, name } = await uploadMask(arrayBuffer, imgurl)
+          console.log(url, name)
+
+          // // 更新图片
           window.app.data[inp.id].inputs.image = name
         }
       })
