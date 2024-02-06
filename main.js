@@ -516,8 +516,10 @@ function createSetup (parentElement) {
 
   btn.innerText = 'Load ComfyUI App'
 
-  btn.addEventListener('click', () => {
-    btn.style.background = 'darkblue'
+  btn.addEventListener('click',async () => {
+    btn.style.background = 'darkblue';
+    // console.log(await navigator.clipboard.read());
+
     showAppsNames()
     // setTimeout(()=>btn.style.background='normal',1500)
   })
@@ -686,6 +688,7 @@ function createTextInput (title, defaultValue, isSingle = false) {
   nameLabel.textContent = title
   div.appendChild(nameLabel)
 
+ 
   // Create an input field for the image name
   const textInput = document.createElement('textarea')
   textInput.value = defaultValue
@@ -703,7 +706,17 @@ function createTextInput (title, defaultValue, isSingle = false) {
 
   textInput.addEventListener('blur', async e => {
     unLockedCurrentLayerForTextInput()
+  });
+
+  // 粘贴文本
+  let pasteFromClipboard=document.createElement('div');
+  nameLabel.appendChild(pasteFromClipboard);
+  pasteFromClipboard.innerText="+"
+  pasteFromClipboard.addEventListener('click',async e=>{
+   let obj=await navigator.clipboard.read();
+   if(obj['text/plain'])  textInput.value=obj['text/plain']
   })
+
 
   return [div, textInput]
 }

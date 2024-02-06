@@ -45,8 +45,9 @@ Create a workflow for Photoshop using the appinfo of [comfyui-mixlab-nodes](http
 [developer.adobe.com](https://developer.adobe.com/photoshop/uxp/2022/)
 
 
-> 目前支持 22.5.0，暂未支持：Imaging API Beta , Photoshop 24.2 (February 2023)
-
+> 本插件目前支持 22.5.0，更高的版本未测试。
+> 暂未支持：Imaging API Beta , Photoshop 24.2 (February 2023)
+> clipboard只能读取文本
 
 
 ##### 答疑交流
