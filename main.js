@@ -1461,8 +1461,8 @@ async function createImageAndMaskFromBound (margin = 48, fixBound = null) {
 
     result.preview = await cropped_img.getBase64Async(Jimp.MIME_PNG)
 
-    // 恢复选区
-    await createRectSelect({ ...bound })
+    //   新选区
+    await createRectSelect({ left,top,bottom,right })
 
     return result
   }
