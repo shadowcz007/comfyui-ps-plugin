@@ -1,78 +1,93 @@
 body {
-    color: white;
-    padding: 0 16px;
-  }
+  color: white;
+  padding: 0 16px;
+}
 
-  uxp-panel{
-    color: white;
-    padding: 0 16px;
-  }
-  li:before {
-    content: '• ';
-    width: 3em;
-  }
+uxp-panel {
+  color: white;
+  padding: 0 16px;
+}
 
-  #layers {
-    border: 1px solid #808080;
-    border-radius: 4px;
-    padding: 16px;
-  }
+li:before {
+  content: '• ';
+  width: 3em;
+}
 
-  .status{
-    font-size: 14px;
-  }
+#layers {
+  border: 1px solid #808080;
+  border-radius: 4px;
+  padding: 16px;
+}
 
-  .card{
-    margin-top: 18px;
-    display: flex;
-    flex-direction: column;
-  }
-  .card label{
-    margin-bottom: 10px;
-  }
-  .card .tag{
-    background: #00ff7e;
-    color: black;
-    padding: 2px;
-    margin-left: 12px;
-    border-radius: 4px;
-    font-weight: 600;
-  }
-  textarea{
-    height: 100px;
-    margin: 0;
-    margin-top: 12px;
-  }
+.status {
+  font-size: 14px;
+}
 
-  input{
-   
-    margin: 0;
-    margin-top: 12px;
-  }
+.card {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.card label {
+  margin-bottom: 10px;
+}
+
+.card .tag {
+  background: #00ff7e;
+  color: black;
+  padding: 2px;
+  margin-left: 12px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+textarea {
+  height: 100px;
+  margin: 0;
+  margin-top: 12px;
+}
+
+input {
+
+  margin: 0;
+  margin-top: 12px;
+}
 
 
-  button{
-    margin: 0;
-    margin-top: 24px;
-    padding: 0;
-    width: 100%;
-    cursor: pointer;
-    height: 32px;
-  }
-  label{
-    margin-right: 12px;
-  }
-  select{
-    margin: 0;
-  }
+button {
+  margin: 0;
+  margin-top: 24px;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  height: 32px;
+}
 
-  .input_image{
-    cursor: pointer;
-    width: 120px;
-    height: fit-content;
-  }
+label {
+  margin-right: 12px;
+}
 
-  .input_image:hover{
-    outline: 1px solid rgb(192, 234, 255);
-    
-  }
+select {
+  margin: 0;
+}
+
+.input_num {
+  width: 150px;
+}
+
+.input_image {
+  cursor: pointer;
+  width: 120px;
+  height: fit-content;
+
+  min-height: 100px;
+  outline: 1px solid #6a736a;
+  /* background-color: currentColor; */
+
+}
+
+.input_image:hover {
+  outline: 1px solid rgb(192, 234, 255);
+
+}

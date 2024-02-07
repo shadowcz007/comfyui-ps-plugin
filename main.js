@@ -670,10 +670,10 @@ function createImageInput (title, defaultValue) {
   // selectionTag.className = 'tag'
   // nameLabel.appendChild(selectionTag)
 
-
   // Create an input field for the image name
   const imgInput = document.createElement('img')
-  imgInput.src = base64Df
+  console.log(defaultValue)
+  imgInput.src = defaultValue || base64Df
   imgInput.className = 'input_image'
   // imgInput.src = `${hostUrl}/view?filename=${encodeURIComponent(
   //   defaultValue
@@ -754,6 +754,7 @@ function createNumberSelectInput (title, defaultValue, opts) {
   // Create an input field for the image name
   const numInput = document.createElement('input')
   numInput.type = 'range'
+  numInput.className = 'input_num'
   numInput.value = defaultValue
   numInput.min = min || 0
   numInput.max = max || 255
@@ -763,12 +764,28 @@ function createNumberSelectInput (title, defaultValue, opts) {
 
   const value = document.createElement('label')
   value.innerText = defaultValue + (unit ? unit : '')
+  inpDiv.appendChild(value)
 
   numInput.addEventListener('input', e => {
     value.innerText = numInput.value + (unit ? unit : '')
   })
 
-  inpDiv.appendChild(value)
+  // 增加一个100%的按钮，获取画布最大尺寸
+  let maxInput = document.createElement('label')
+  maxInput.className = 'tag'
+  maxInput.innerText = 'Max'
+  inpDiv.appendChild(maxInput)
+  maxInput.addEventListener('click', e => {
+    // console.log(outNumInput)
+    const maxSize = Math.max(
+      photoshop.activeDocument.height,
+      photoshop.activeDocument.width
+    )
+
+    numInput.max = maxSize
+    numInput.value = maxSize
+    value.innerText = maxSize + (unit ? unit : '')
+  })
 
   return [div, numInput]
 }
@@ -826,6 +843,16 @@ async function getMyApps (
     }
   } catch (error) {}
   return data
+}
+
+function parseUrlFromImageName (name) {
+  let [subfolder,filename]=name.split('/')
+  console.log(name,subfolder,filename)
+  // filename=filename.split(' ')[0]
+  let url=`${hostUrl}/view?filename=${encodeURIComponent(
+    filename
+  )}&type=input&subfolder=${subfolder}&rand=${Math.random()}`
+  return url
 }
 
 // TODO ps插件不支持File类型，需要调整
@@ -1377,6 +1404,51 @@ async function createMaskFromLayerDone () {
   return result
 }
 
+// 全局共享，方便切换工作流的时候保存数据
+function appInputsSave (type, data) {
+  if (type === 'images') {
+    if (!window.inputImagesSave) {
+      window.inputImagesSave = {}
+    }
+
+    window.inputImagesSave[data.id] = data
+  }
+
+  if (type === 'texts') {
+    if (!window.inputTextsSave) {
+      window.inputTextsSave = {}
+    }
+
+    window.inputTextsSave[data.id] = data
+  }
+}
+
+function appInputsGet (type, id) {
+  if (type === 'images') {
+    if (!window.inputImagesSave) {
+      window.inputImagesSave = {}
+    }
+
+    if (id) {
+      return window.inputImagesSave[id]
+    } else {
+      return Object.values(window.inputImagesSave)[0]
+    }
+  }
+
+  if (type === 'texts') {
+    if (!window.inputTextsSave) {
+      window.inputTextsSave = {}
+    }
+
+    if (id) {
+      return window.inputTextsSave[id]
+    } else {
+      return Object.values(window.inputTextsSave)[0]
+    }
+  }
+}
+
 // 创建LoadImage的数据,img 和 mask
 async function createImageAndMaskFromBound (margin = 48, fixBound = null) {
   let result = {
@@ -1462,7 +1534,7 @@ async function createImageAndMaskFromBound (margin = 48, fixBound = null) {
     result.preview = await cropped_img.getBase64Async(Jimp.MIME_PNG)
 
     //   新选区
-    await createRectSelect({ left,top,bottom,right })
+    await createRectSelect({ left, top, bottom, right })
 
     return result
   }
@@ -1654,13 +1726,28 @@ function createApp (apps, targetFilename, mainDom) {
   // 输入和输出的ui创建
 
   // 图片输入
+
   for (let index = 0; index < app.input.length; index++) {
     const inp = app.input[index]
     // 节点可能不存在
     if (inp?.inputs?.image && ['LoadImage'].includes(inp.class_type)) {
       // inp.title += inp.options?.hasMask ? `#MASK` : ''
 
-      const [div, imgInput] = createImageInput(inp.title, inp.inputs.image)
+      // 从全局共享里获取
+      let imagePre = appInputsGet('images', inp.id)
+      if (!imagePre) {
+        imagePre = appInputsGet('images')
+      }
+
+      if (imagePre) {
+        window.app.data[inp.id].inputs.image = imagePre.name
+      }
+
+      // console.log(inp.inputs.image)
+      const [div, imgInput] = createImageInput(
+        inp.title,
+        imagePre?.preview || parseUrlFromImageName(inp.inputs.image)
+      )
       mainDom.appendChild(div)
 
       // 有mask作为输入
@@ -1674,16 +1761,11 @@ function createApp (apps, targetFilename, mainDom) {
         tag.addEventListener('click', async e => {
           let loadImageNodeData = await createMaskFromLayerDone()
 
-          const {
-            imgBase64,
-            imgBuffer,
-            maskBase64,
-            maskBuffer,
-            preview, 
-          } = loadImageNodeData || {}
+          const { imgBase64, imgBuffer, maskBase64, maskBuffer, preview } =
+            loadImageNodeData || {}
 
           // if (!imgBase64 || !maskBase64)
-          //   return photoshop.showAlert(`Please select the region`) 
+          //   return photoshop.showAlert(`Please select the region`)
 
           // 更新
           if (preview != imgInput.src) {
@@ -1696,6 +1778,12 @@ function createApp (apps, targetFilename, mainDom) {
 
             // // 更新图片
             window.app.data[inp.id].inputs.image = name
+
+            appInputsSave('images', {
+              preview,
+              name,
+              id: inp.id
+            })
           }
         })
 
@@ -1747,6 +1835,12 @@ function createApp (apps, targetFilename, mainDom) {
 
             // // 更新图片
             window.app.data[inp.id].inputs.image = name
+
+            appInputsSave('images', {
+              preview,
+              name,
+              id: inp.id
+            })
           }
         } else {
           // 没有mask输出
@@ -1766,6 +1860,12 @@ function createApp (apps, targetFilename, mainDom) {
             app.input[index].inputs.imageUrl = url
             // 更新图片
             window.app.data[inp.id].inputs.image = name
+
+            appInputsSave('images', {
+              preview: base64,
+              name,
+              id: inp.id
+            })
           }
         }
       })
@@ -1777,12 +1877,30 @@ function createApp (apps, targetFilename, mainDom) {
     const inp = app.input[index]
     // 节点可能不存在
     if (inp?.inputs?.text) {
-      const [div, textInput] = createTextInput(inp.title, inp.inputs.text)
+      // 从全局共享里获取
+      let textPre = appInputsGet('texts', inp.id)
+      // if (!textPre) {
+      //   textPre = appInputsGet('texts')
+      // }
+
+      if (textPre) {
+        window.app.data[inp.id].inputs.text = textPre.text
+      }
+
+      const [div, textInput] = createTextInput(
+        inp.title,
+        textPre?.text || inp.inputs.text
+      )
       mainDom.appendChild(div)
       textInput.addEventListener('change', e => {
         e.preventDefault()
         // 更新文本
         window.app.data[inp.id].inputs.text = textInput.value
+
+        appInputsSave('texts', {
+          text: textInput.value,
+          id: inp.id
+        })
       })
     }
   }
