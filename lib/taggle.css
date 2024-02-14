@@ -1,0 +1,136 @@
+/*
+    Basic styles to get you started in styling taggle
+    https://jsfiddle.net/okcoker/aqnspdtr/8/
+*/
+.taggle_list input[type="hidden"] {
+    opacity: 0;
+    width: 1px;
+}
+
+.textarea {
+    width: 100%;
+    height: 300px;
+    border: 1px solid red;
+}
+
+.taggle_list {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0;
+    margin: 0;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.taggle_input {
+    border: none;
+    outline: none;
+    font-size: 16px;
+    font-weight: 300;
+    padding: 0;
+    margin: 0 !important;
+    background: none !important;
+     /* width: 56px !important; */
+    /* width:fit-content; */
+    height: 32px;
+    line-height: 32px;
+    color: white;
+}
+
+.taggle_list li {
+    display: inline-block;
+    white-space: nowrap;
+    font-weight: 500;
+    margin-bottom: 0;
+}
+
+/* .taggle_list li::before {
+    content: '';
+    width: unset;
+} */
+
+.taggle_list .taggle {
+    min-width: 48px;
+    height: 24px;
+    justify-content: flex-start;
+    align-items: center;
+    margin-right: 8px;
+    margin-bottom: 8px;
+    background: #272727;
+    display: flex;
+    flex-direction: row;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 300;
+    letter-spacing: 1px;
+}
+
+.taggle_list .taggle span {
+    margin: 0;
+    padding: 0;
+    margin-left: 12px;
+    display: flex;
+    width: fit-content;
+}
+
+.taggle_list .taggle_hot {
+    background: #cac8c4;
+}
+
+.taggle_list .taggle .close {
+    width: 24px;
+    display: flex;
+    font-size: 1.1rem;
+
+    text-decoration: none;
+    padding: 0;
+    line-height: 0.5;
+    color: #ccc;
+    color: rgba(0, 0, 0, 0.2);
+    margin: 0;
+
+    border: 0;
+    background: none;
+    cursor: pointer;
+}
+
+.taggle_list .taggle:hover {
+    outline: 1px solid #00ff7e;
+
+}
+
+.taggle_list .taggle:hover>.close {
+    display: block;
+    color: #CCC;
+}
+
+.taggle_list .taggle .close:hover {
+    color: white;
+}
+
+.taggle_placeholder {
+
+    color: #CCC;
+
+    user-select: none;
+}
+
+.taggle_text:before {
+    content: ' ';
+    width:1.5em;
+    cursor: move;
+  }
+
+.taggle_sizer {
+    padding: 0;
+    margin: 0;
+    position: absolute;
+    top: -500px;
+    z-index: -1;
+    visibility: hidden;
+}
+
+.selected{
+    outline:1px solid gold;
+}

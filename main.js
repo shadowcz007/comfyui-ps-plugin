@@ -477,6 +477,7 @@ const { app: photoshop, constants } = require('photoshop')
 const { executeAsModal } = require('photoshop').core
 const batchPlay = require('photoshop').action.batchPlay
 
+const Taggle = require('./lib/taggle.js')
 const Jimp = require('./lib/jimp.min.js')
 
 const base64Df =
@@ -527,6 +528,38 @@ function createSetup (parentElement) {
   footer.appendChild(btn)
 }
 
+function createPrompt (parentElement) {
+  let heading = document.createElement('sp-heading')
+  heading.innerHTML = `<span class="status"></span>`
+
+  parentElement.appendChild(heading)
+
+  window._prompt = 'a cat,on the mar'
+
+  const [div, promptInput] = createPromptInput('Prompt', window._prompt)
+  parentElement.appendChild(div)
+  console.log(promptInput)
+
+  // promptInput.getInput().addEventListener('change', e => {
+  //   btn.style.background = 'normal'
+  // })
+
+  let footer = document.createElement('footer')
+  parentElement.appendChild(footer)
+
+  let btn = document.createElement('sp-button')
+
+  btn.innerText = 'Combo'
+
+  btn.addEventListener('click', async () => {
+    btn.style.background = 'darkblue'
+    window._prompt = promptInput.getTagValues().join(',')
+    console.log(window._prompt)
+  })
+
+  footer.appendChild(btn)
+}
+
 function handleFlyout (id) {
   if (id === 'about') {
     document.querySelector('dialog').showModal()
@@ -543,6 +576,12 @@ entrypoints.setup({
     setup: {
       show (node) {
         createSetup(node)
+        // console.log(node)
+      }
+    },
+    prompt: {
+      show (node) {
+        createPrompt(node)
         // console.log(node)
       }
     }
@@ -682,6 +721,68 @@ function createImageInput (title, defaultValue) {
   div.appendChild(imgInput)
 
   return [div, imgInput]
+}
+
+// 创建更好的prompt输入框
+
+function createPromptInput (title, value) {
+  let div = document.createElement('div')
+  div.className = 'card prompt'
+
+  // Create a label for the upload control
+  const nameLabel = document.createElement('label')
+  nameLabel.textContent = title
+  div.appendChild(nameLabel)
+
+  let t = document.createElement('div')
+  div.appendChild(t)
+
+  var taggle = new Taggle(t, {
+    tags: value.split(','),
+    allowDuplicates: true,
+    placeholder: '',
+    maxTags: 38
+  })
+
+  const moveFn=()=>{
+    let tags = taggle.getTagElements()
+    let isTarget = null
+    for (let index = 0; index < tags.length; index++) {
+      const tag = tags[index]
+      tag.addEventListener('click', e => {
+        if (isTarget === null) {
+          isTarget = index
+          tag.classList.add('selected')
+        } else {
+
+          if(index===isTarget){
+            tags[isTarget].classList.remove('selected')
+            isTarget=null
+            return
+          }
+
+          tags[isTarget].classList.remove('selected')
+          // console.log(index, isTarget)
+          let ts = [...taggle.tag.values]
+          taggle.removeAll()
+  
+          let _t = ts[isTarget]
+          ts[isTarget] = ts[index]
+          ts[index] = _t
+  
+          isTarget = null
+  
+          Array.from(ts, t => taggle.add(t));
+          
+          moveFn();
+
+        }
+      })
+    }
+  }
+
+moveFn();
+  return [div, taggle]
 }
 
 // 创建文本输入 - 带说明
@@ -846,10 +947,10 @@ async function getMyApps (
 }
 
 function parseUrlFromImageName (name) {
-  let [subfolder,filename]=name.split('/')
-  console.log(name,subfolder,filename)
+  let [subfolder, filename] = name.split('/')
+  console.log(name, subfolder, filename)
   // filename=filename.split(' ')[0]
-  let url=`${hostUrl}/view?filename=${encodeURIComponent(
+  let url = `${hostUrl}/view?filename=${encodeURIComponent(
     filename
   )}&type=input&subfolder=${subfolder}&rand=${Math.random()}`
   return url

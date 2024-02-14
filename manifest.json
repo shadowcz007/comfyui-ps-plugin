@@ -124,6 +124,62 @@
       "label": {
         "default": "ComfyUI server"
       }
+    }, {
+      "type": "panel",
+      "id": "prompt",
+      "minimumSize": {
+        "width": 300,
+        "height": 300
+      },
+      "maximumSize": {
+        "width": 300,
+        "height": 300
+      },
+      "preferredDockedSize": {
+        "width": 300,
+        "height": 300
+      },
+      "preferredFloatingSize": {
+        "width": 300,
+        "height": 300
+      },
+      "icons": [
+        {
+          "width": 32,
+          "height": 32,
+          "path": "icons/light.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "dark",
+            "darkest"
+          ],
+          "species": [
+            "generic"
+          ]
+        },
+        {
+          "width": 32,
+          "height": 32,
+          "path": "icons/light.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "lightest",
+            "light"
+          ],
+          "species": [
+            "generic"
+          ]
+        }
+      ],
+      "label": {
+        "default": "Prompt"
+      }
     }
   ],
   "icons": [
