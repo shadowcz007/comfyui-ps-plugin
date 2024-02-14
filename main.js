@@ -538,7 +538,7 @@ function createPrompt (parentElement) {
 
   const [div, promptInput] = createPromptInput('Prompt', window._prompt)
   parentElement.appendChild(div)
-  console.log(promptInput)
+  // console.log(promptInput)
 
   // promptInput.getInput().addEventListener('change', e => {
   //   btn.style.background = 'normal'
@@ -546,6 +546,42 @@ function createPrompt (parentElement) {
 
   let footer = document.createElement('footer')
   parentElement.appendChild(footer)
+
+  // Wildcards
+  let wildcardsBtn = document.createElement('sp-button')
+  // 存储的数据
+  let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
+  wildcardsBtn.innerText = `Wildcards ${Object.values(datas).length}`
+
+  let dropdown = document.createElement('sp-picker')
+  // dropdown.placeholder="Make a selection..."
+  dropdown.setAttribute('label', 'Wildcards')
+  dropdown.style = 'width: 320px'
+  // dropdown.setAttribute('value',Object.values(datas)[0].name)
+  dropdown.innerHTML = `<sp-menu slot="options">
+  ${Array.from(
+    Object.values(datas),
+    (d, i) =>
+      `<sp-menu-item ${i == 0 ? 'selected' : ''}>${d.name}</sp-menu-item>`
+  )}
+</sp-menu>`
+
+  wildcardsBtn.addEventListener('click', async () => {
+    let file = await fs.getFileForOpening()
+    console.log(file)
+    let name = file.name
+    let data = await file.read()
+    let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
+    datas[name] = {
+      name,
+      data
+    }
+    window.localStorage.setItem('Wildcards', JSON.stringify(datas))
+  })
+
+  footer.appendChild(dropdown)
+
+  footer.appendChild(wildcardsBtn)
 
   let btn = document.createElement('sp-button')
 
@@ -730,9 +766,10 @@ function createPromptInput (title, value) {
   div.className = 'card prompt'
 
   // Create a label for the upload control
-  const nameLabel = document.createElement('label')
+  const nameLabel = document.createElement('sp-heading')
   nameLabel.textContent = title
   div.appendChild(nameLabel)
+  nameLabel.size = 'XS'
 
   let t = document.createElement('div')
   div.appendChild(t)
@@ -741,47 +778,54 @@ function createPromptInput (title, value) {
     tags: value.split(','),
     allowDuplicates: true,
     placeholder: '',
-    maxTags: 38
+    maxTags: 38,
+    onTagAdd: e => {
+      // let tags = taggle.getTagElements();
+      moveFn()//bug
+    }
   })
 
-  const moveFn=()=>{
+  const moveFn = () => {
     let tags = taggle.getTagElements()
     let isTarget = null
     for (let index = 0; index < tags.length; index++) {
       const tag = tags[index]
-      tag.addEventListener('click', e => {
-        if (isTarget === null) {
-          isTarget = index
-          tag.classList.add('selected')
-        } else {
+      console.log(tag, index)
+   
+      if (!tag._hasMoveFn) {
+        tag._hasMoveFn = true
+        tag.addEventListener('click', e => {
+          if (isTarget === null) {
+            isTarget = index
+            tag.classList.add('selected')
+          } else {
+            if (index === isTarget) {
+              tags[isTarget].classList.remove('selected')
+              isTarget = null
+              return
+            }
 
-          if(index===isTarget){
             tags[isTarget].classList.remove('selected')
-            isTarget=null
-            return
+            // console.log(index, isTarget)
+            let ts = [...taggle.tag.values]
+            taggle.removeAll()
+
+            let _t = ts[isTarget]
+            ts[isTarget] = ts[index]
+            ts[index] = _t
+
+            isTarget = null
+
+            Array.from(ts, t => taggle.add(t))
+
+            moveFn()
           }
-
-          tags[isTarget].classList.remove('selected')
-          // console.log(index, isTarget)
-          let ts = [...taggle.tag.values]
-          taggle.removeAll()
-  
-          let _t = ts[isTarget]
-          ts[isTarget] = ts[index]
-          ts[index] = _t
-  
-          isTarget = null
-  
-          Array.from(ts, t => taggle.add(t));
-          
-          moveFn();
-
-        }
-      })
+        })
+      }
     }
   }
 
-moveFn();
+  moveFn()
   return [div, taggle]
 }
 

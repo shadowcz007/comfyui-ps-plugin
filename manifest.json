@@ -219,6 +219,7 @@
     "webview": {
       "allow": "yes",
       "domains": "all"
-    }
+    },
+    "localFileSystem": "request"
   }
 }
