@@ -534,24 +534,50 @@ function createPrompt (parentElement) {
 
   parentElement.appendChild(heading)
 
-  window._prompt = 'a cat,on the mar'
+  window._prompt = JSON.parse(localStorage.getItem('prompt_tags') || '[]')
 
   const [div, promptInput] = createPromptInput('Prompt', window._prompt)
   parentElement.appendChild(div)
-  // console.log(promptInput)
-
-  // promptInput.getInput().addEventListener('change', e => {
-  //   btn.style.background = 'normal'
-  // })
 
   let footer = document.createElement('footer')
   parentElement.appendChild(footer)
+  footer.className = 'prompt_footer'
+
+  // combo
+  let comboBtn = document.createElement('sp-button')
+
+  comboBtn.innerText = 'Combo'
+
+  comboBtn.addEventListener('click', async () => {
+    comboBtn.style.background = 'darkblue'
+    window._prompt = promptInput.getTagValues()
+
+    window._prompt = Array.from(window._prompt, p => {
+      if (p.match('<wildcard')) {
+        return parseWildcard(p)
+      }
+      return p
+    }).filter(f => f)
+
+    console.log(window._prompt)
+  })
+
+  footer.appendChild(comboBtn)
 
   // Wildcards
-  let wildcardsBtn = document.createElement('sp-button')
+  let wc = document.createElement('div')
+  wc.className = 'wildcards'
+  let wc_title = document.createElement('sp-heading')
+  wc_title.innerText = 'Wildcards'
+  wc_title.size = 'XS'
+
+  let wc_content = document.createElement('div')
+  wc_content.className='wildcards_content'
+  let wildcardsBtn = document.createElement('span')
+  wildcardsBtn.className = 'wildcardsBtn'
   // 存储的数据
   let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
-  wildcardsBtn.innerText = `Wildcards ${Object.values(datas).length}`
+  wildcardsBtn.innerText = ` + ${Object.values(datas).length}`
 
   let dropdown = document.createElement('sp-picker')
   // dropdown.placeholder="Make a selection..."
@@ -568,7 +594,7 @@ function createPrompt (parentElement) {
 
   wildcardsBtn.addEventListener('click', async () => {
     let file = await fs.getFileForOpening()
-    console.log(file)
+    // console.log(file)
     let name = file.name
     let data = await file.read()
     let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
@@ -579,22 +605,75 @@ function createPrompt (parentElement) {
     window.localStorage.setItem('Wildcards', JSON.stringify(datas))
   })
 
-  footer.appendChild(dropdown)
+  let addWildCard2PromptBtn = document.createElement('button')
+  addWildCard2PromptBtn.innerText = 'add'
 
-  footer.appendChild(wildcardsBtn)
-
-  let btn = document.createElement('sp-button')
-
-  btn.innerText = 'Combo'
-
-  btn.addEventListener('click', async () => {
-    btn.style.background = 'darkblue'
-    window._prompt = promptInput.getTagValues().join(',')
-    console.log(window._prompt)
+  addWildCard2PromptBtn.addEventListener('click', e => {
+    // console.log(datas[dropdown.value])
+    promptInput.settings.additionalTagClasses = 'wildcard'
+    promptInput.add(`<wildcard:${dropdown.value}>`)
+    promptInput.settings.additionalTagClasses = ''
   })
 
-  footer.appendChild(btn)
+  footer.appendChild(wc)
+  wc.appendChild(wc_title)
+  wc.appendChild(wc_content)
+
+  wc_title.appendChild(wildcardsBtn)
+  wc_content.appendChild(dropdown)
+  wc_content.appendChild(addWildCard2PromptBtn)
 }
+
+function parseWildcard (wildcard) {
+  var regex = /<wildcard(\[(\d+)-(\d+)\])?:(.*?)>/
+  var matches = wildcard.match(regex)
+
+  if (matches) {
+    var start = 1
+    var end = 1
+    var name
+
+    if (matches[2] && matches[3]) {
+      start = parseInt(matches[2])
+      end = parseInt(matches[3])
+    }
+
+    if (matches[4]) {
+      name = matches[4]
+    }
+
+    let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
+
+    console.log(datas, name.match('.txt') ? name : `${name}.txt`)
+    let data = datas[name.match('.txt') ? name : `${name}.txt`]?.data
+
+    if (data) {
+      data = Array.from(data.split('\n'), d => d.trim()).filter(f => f)
+
+      if (start >= 1 && end <= data.length && start <= end) {
+        var result = []
+        for (var i = start; i <= end; i++) {
+          let index = Math.floor(Math.random() * data.length)
+          result.push(data[index])
+          data[index] = null
+          data = data.filter(d => d)
+        }
+        return result.join(' ')
+      }
+    }
+  }
+
+  return ''
+}
+
+// // 示例用法
+// var wildcard1 = "<wildcard[1-3]:cat dog elephant>";
+// var wildcard2 = "<wildcard[2-4]:dog elephant leopard>";
+// var wildcard3 = "<wildcard[3-1]:elephant leopard dog>";
+
+// console.log(parseWildcard(wildcard1)); // 输出：['cat', 'dog', 'elephant']
+// console.log(parseWildcard(wildcard2)); // 输出：['dog', 'elephant', 'leopard']
+// console.log(parseWildcard(wildcard3)); // 输出：null，范围不正确
 
 function handleFlyout (id) {
   if (id === 'about') {
@@ -774,54 +853,91 @@ function createPromptInput (title, value) {
   let t = document.createElement('div')
   div.appendChild(t)
 
-  var taggle = new Taggle(t, {
-    tags: value.split(','),
+  let isTarget = null
+  let taggle = new Taggle(t, {
+    tags: [],
     allowDuplicates: true,
     placeholder: '',
     maxTags: 38,
     onTagAdd: e => {
-      // let tags = taggle.getTagElements();
-      moveFn()//bug
+      moveFn()
+      localStorage.setItem(
+        'prompt_tags',
+        JSON.stringify([...taggle.tag.values])
+      )
+    },
+    onTagRemove: e => {
+      //缓存
+      localStorage.setItem(
+        'prompt_tags',
+        JSON.stringify([...taggle.tag.values])
+      )
     }
   })
 
-  const moveFn = () => {
+  // 初始化输入tags
+
+  for (const v of value) {
+    // console.log(parseWildcard(v))
+    if (v.match('<wildcard') && parseWildcard(v)) {
+      taggle.settings.additionalTagClasses = 'wildcard'
+      taggle.add(v)
+      taggle.settings.additionalTagClasses = ''
+    } else {
+      taggle.add(v)
+    }
+  }
+
+  function moveFn () {
     let tags = taggle.getTagElements()
-    let isTarget = null
+
     for (let index = 0; index < tags.length; index++) {
       const tag = tags[index]
-      console.log(tag, index)
-   
+      tag.setAttribute('data-index', index)
       if (!tag._hasMoveFn) {
+        tag.addEventListener('click', bindMoveFn)
         tag._hasMoveFn = true
-        tag.addEventListener('click', e => {
-          if (isTarget === null) {
-            isTarget = index
-            tag.classList.add('selected')
-          } else {
-            if (index === isTarget) {
-              tags[isTarget].classList.remove('selected')
-              isTarget = null
-              return
-            }
-
-            tags[isTarget].classList.remove('selected')
-            // console.log(index, isTarget)
-            let ts = [...taggle.tag.values]
-            taggle.removeAll()
-
-            let _t = ts[isTarget]
-            ts[isTarget] = ts[index]
-            ts[index] = _t
-
-            isTarget = null
-
-            Array.from(ts, t => taggle.add(t))
-
-            moveFn()
-          }
-        })
       }
+    }
+  }
+
+  function bindMoveFn () {
+    let tag = this
+    let index = parseInt(tag.getAttribute('data-index'))
+    let tags = taggle.getTagElements()
+
+    if (isTarget === null) {
+      isTarget = index
+      tag?.classList.add('selected')
+    } else {
+      if (index === isTarget) {
+        tags[isTarget]?.classList.remove('selected')
+        isTarget = null
+        return
+      }
+      if (!tags[isTarget]) {
+        isTarget = null
+        return
+      }
+      tags[isTarget]?.classList.remove('selected')
+
+      let ts = [...taggle.tag.values]
+      taggle.removeAll()
+
+      console.log('#click', isTarget, index, ts)
+
+      let _t = ts[isTarget]
+      ts[isTarget] = ts[index]
+      ts[index] = _t
+
+      // console.log(ts,isTarget)
+
+      isTarget = null
+
+      taggle.add(ts)
+      // Array.from(ts, t => taggle.add(t))
+
+      moveFn()
     }
   }
 

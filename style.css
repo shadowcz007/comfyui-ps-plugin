@@ -91,3 +91,23 @@ select {
   outline: 1px solid rgb(192, 234, 255);
 
 }
+
+.prompt_footer{
+   flex-direction: column; 
+}
+
+.wildcards{
+  display: flex;
+  margin: 12px;
+  flex-direction: column; 
+}
+
+.wildcardsBtn{
+  border-radius: 100%;
+  background: gray;
+  width: 24px;
+  height: 24px;
+  font-size: 10px;
+  padding: 6px 0;
+  margin: 8px;
+}

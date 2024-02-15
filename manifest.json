@@ -132,16 +132,16 @@
         "height": 300
       },
       "maximumSize": {
-        "width": 300,
-        "height": 300
+        "width": 800,
+        "height": 800
       },
       "preferredDockedSize": {
-        "width": 300,
-        "height": 300
+        "width": 400,
+        "height": 600
       },
       "preferredFloatingSize": {
-        "width": 300,
-        "height": 300
+        "width": 400,
+        "height": 600
       },
       "icons": [
         {

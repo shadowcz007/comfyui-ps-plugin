@@ -30,7 +30,7 @@
     padding: 0;
     margin: 0 !important;
     background: none !important;
-     /* width: 56px !important; */
+    /* width: 56px !important; */
     /* width:fit-content; */
     height: 32px;
     line-height: 32px;
@@ -97,7 +97,6 @@
 
 .taggle_list .taggle:hover {
     outline: 1px solid #00ff7e;
-
 }
 
 .taggle_list .taggle:hover>.close {
@@ -116,11 +115,11 @@
     user-select: none;
 }
 
-.taggle_text:before {
+/* .taggle_text:before {
     content: ' ';
     width:1.5em;
     cursor: move;
-  }
+  } */
 
 .taggle_sizer {
     padding: 0;
@@ -131,6 +130,29 @@
     visibility: hidden;
 }
 
-.selected{
-    outline:1px solid gold;
+.selected {
+    /* outline:1px solid gold; */
+}
+
+.taggle_list .selected:before {
+    content: '❤️';
+    width: 1em;
+    padding: 3px;
+    cursor: move;
+    color: gold
+}
+
+.wildcards_content{
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+}
+.wildcards_content button{
+    margin-top: 0;
+    width: 56px;
+    margin-left: 12px
+}
+
+.taggle.wildcard {
+    border-left: 1px solid red;
 }
