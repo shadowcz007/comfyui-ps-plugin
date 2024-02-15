@@ -154,5 +154,9 @@
 }
 
 .taggle.wildcard {
-    border-left: 1px solid red;
+    border-left: 4px solid red;
+}
+
+.taggle.embed{
+    border-left: 4px solid yellow;
 }

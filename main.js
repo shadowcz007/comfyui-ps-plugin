@@ -520,6 +520,7 @@ function createSetup (parentElement) {
   btn.addEventListener('click', async () => {
     btn.style.background = 'darkblue'
     // console.log(await navigator.clipboard.read());
+    loadEmbeddings()
 
     showAppsNames()
     // setTimeout(()=>btn.style.background='normal',1500)
@@ -528,7 +529,7 @@ function createSetup (parentElement) {
   footer.appendChild(btn)
 }
 
-function createPrompt (parentElement) {
+async function createPrompt (parentElement) {
   let heading = document.createElement('sp-heading')
   heading.innerHTML = `<span class="status"></span>`
 
@@ -565,15 +566,16 @@ function createPrompt (parentElement) {
   footer.appendChild(comboBtn)
 
   // Wildcards
-  let wc = createPromptOption('Wildcard', promptInput)
+  let wc = createPromptOption('Wildcard', promptInput,true)
   footer.appendChild(wc)
 
   // Embed
+  await loadEmbeddings()
   let embed = createPromptOption('Embed', promptInput)
   footer.appendChild(embed)
 }
 
-function createPromptOption (title, promptInput) {
+function createPromptOption (title, promptInput,canImport=false) {
   // Wildcards
   let wc = document.createElement('div')
   wc.className = title.toLowerCase()
@@ -602,7 +604,7 @@ function createPromptOption (title, promptInput) {
   ).join("")}
 </sp-menu>`
 
-  wildcardsBtn.addEventListener('click', async () => {
+if(canImport)  wildcardsBtn.addEventListener('click', async () => {
     let file = await fs.getFileForOpening()
     // console.log(file)
     let name = file.name
@@ -909,17 +911,24 @@ function createPromptInput (title, value) {
   })
 
   // 初始化输入tags
-
-  for (const v of value) {
-    // console.log(parseWildcard(v))
-    if (v.match('<wildcard') && parseWildcard(v)) {
-      taggle.settings.additionalTagClasses = 'wildcard'
-      taggle.add(v)
-      taggle.settings.additionalTagClasses = ''
-    } else {
-      taggle.add(v)
+  const addTags=(value)=>{
+    for (const v of value) {
+      // console.log(parseWildcard(v))
+      if (v.match('<wildcard') && parseWildcard(v)) {
+        taggle.settings.additionalTagClasses = 'wildcard'
+        taggle.add(v)
+        taggle.settings.additionalTagClasses = ''
+      } else  if (v.match('<embed')) {
+        taggle.settings.additionalTagClasses = 'embed'
+        taggle.add(v)
+        taggle.settings.additionalTagClasses = ''
+      }else {
+        taggle.add(v)
+      }
     }
   }
+
+  addTags(value);
 
   function moveFn () {
     let tags = taggle.getTagElements()
@@ -968,7 +977,8 @@ function createPromptInput (title, value) {
 
       isTarget = null
 
-      taggle.add(ts)
+      addTags(ts)
+      // taggle.add(ts)
       // Array.from(ts, t => taggle.add(t))
 
       moveFn()
@@ -2306,6 +2316,21 @@ function createApp (apps, targetFilename, mainDom) {
   document.body.addEventListener('focus', e => {
     console.log('#focus')
   })
+}
+
+async function loadEmbeddings(){
+  // let url = new URL(hostUrl)
+  // console.log('#init', hostUrl)
+  let embeddings=await (await fetch(`${hostUrl}/embeddings`)).json();
+  let em={}
+  for (const e of embeddings) {
+    em[e]={
+      name:e,
+      data:e
+    }
+  }
+  localStorage.setItem('Embed',JSON.stringify(em))
+  return em
 }
 
 async function showAppsNames () {
