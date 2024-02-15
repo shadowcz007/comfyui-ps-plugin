@@ -142,12 +142,12 @@
     color: gold
 }
 
-.wildcards_content{
+.opt_content{
     display: flex;
     justify-content: flex-start;
     align-items: center;
 }
-.wildcards_content button{
+.opt_content button{
     margin-top: 0;
     width: 56px;
     margin-left: 12px

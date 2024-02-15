@@ -565,23 +565,33 @@ function createPrompt (parentElement) {
   footer.appendChild(comboBtn)
 
   // Wildcards
+  let wc = createPromptOption('Wildcard', promptInput)
+  footer.appendChild(wc)
+
+  // Embed
+  let embed = createPromptOption('Embed', promptInput)
+  footer.appendChild(embed)
+}
+
+function createPromptOption (title, promptInput) {
+  // Wildcards
   let wc = document.createElement('div')
-  wc.className = 'wildcards'
+  wc.className = title.toLowerCase()
   let wc_title = document.createElement('sp-heading')
-  wc_title.innerText = 'Wildcards'
+  wc_title.innerText = title
   wc_title.size = 'XS'
 
   let wc_content = document.createElement('div')
-  wc_content.className='wildcards_content'
+  wc_content.className = `opt_content`
   let wildcardsBtn = document.createElement('span')
-  wildcardsBtn.className = 'wildcardsBtn'
+  // wildcardsBtn.className = 'wildcardsBtn'
   // 存储的数据
-  let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
+  let datas = JSON.parse(window.localStorage.getItem(title) || '{}')
   wildcardsBtn.innerText = ` + ${Object.values(datas).length}`
 
   let dropdown = document.createElement('sp-picker')
   // dropdown.placeholder="Make a selection..."
-  dropdown.setAttribute('label', 'Wildcards')
+  // dropdown.setAttribute('label', title)
   dropdown.style = 'width: 320px'
   // dropdown.setAttribute('value',Object.values(datas)[0].name)
   dropdown.innerHTML = `<sp-menu slot="options">
@@ -589,7 +599,7 @@ function createPrompt (parentElement) {
     Object.values(datas),
     (d, i) =>
       `<sp-menu-item ${i == 0 ? 'selected' : ''}>${d.name}</sp-menu-item>`
-  )}
+  ).join("")}
 </sp-menu>`
 
   wildcardsBtn.addEventListener('click', async () => {
@@ -597,12 +607,20 @@ function createPrompt (parentElement) {
     // console.log(file)
     let name = file.name
     let data = await file.read()
-    let datas = JSON.parse(window.localStorage.getItem('Wildcards') || '{}')
+    let datas = JSON.parse(window.localStorage.getItem(title) || '{}')
     datas[name] = {
       name,
       data
     }
-    window.localStorage.setItem('Wildcards', JSON.stringify(datas))
+    window.localStorage.setItem(title, JSON.stringify(datas))
+
+    // dropdown.innerHTML=""
+    let s = document.createElement('sp-menu-item')
+    s.innerText = name
+    console.log(dropdown.querySelector('sp-menu'))
+    dropdown.querySelector('sp-menu').appendChild(s)
+
+    wildcardsBtn.innerText = ` + ${Object.values(datas).length}`
   })
 
   let addWildCard2PromptBtn = document.createElement('button')
@@ -610,18 +628,18 @@ function createPrompt (parentElement) {
 
   addWildCard2PromptBtn.addEventListener('click', e => {
     // console.log(datas[dropdown.value])
-    promptInput.settings.additionalTagClasses = 'wildcard'
-    promptInput.add(`<wildcard:${dropdown.value}>`)
+    promptInput.settings.additionalTagClasses = title.toLowerCase()
+    promptInput.add(`<${title.toLowerCase()}:${dropdown.value}>`)
     promptInput.settings.additionalTagClasses = ''
   })
 
-  footer.appendChild(wc)
   wc.appendChild(wc_title)
   wc.appendChild(wc_content)
 
   wc_title.appendChild(wildcardsBtn)
   wc_content.appendChild(dropdown)
   wc_content.appendChild(addWildCard2PromptBtn)
+  return wc
 }
 
 function parseWildcard (wildcard) {
@@ -859,6 +877,21 @@ function createPromptInput (title, value) {
     allowDuplicates: true,
     placeholder: '',
     maxTags: 38,
+    onBeforeTagAdd: (e, text) => {
+      if (isTarget === null) return true
+      // console.log(isTarget, text)
+      taggle.edit(text, isTarget)
+      let tags = taggle.getTagElements()
+      tags[isTarget]?.classList.remove('selected')
+      isTarget = null
+
+      localStorage.setItem(
+        'prompt_tags',
+        JSON.stringify([...taggle.tag.values])
+      )
+
+      return false
+    },
     onTagAdd: e => {
       moveFn()
       localStorage.setItem(
@@ -909,6 +942,7 @@ function createPromptInput (title, value) {
     if (isTarget === null) {
       isTarget = index
       tag?.classList.add('selected')
+      taggle.getInput().value = tag.querySelector('.taggle_text').innerText
     } else {
       if (index === isTarget) {
         tags[isTarget]?.classList.remove('selected')
