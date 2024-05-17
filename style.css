@@ -1,6 +1,8 @@
 body {
   color: white;
   padding: 0 16px;
+  overflow: auto;
+  max-height: 560px;
 }
 
 uxp-panel {
