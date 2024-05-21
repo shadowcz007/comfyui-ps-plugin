@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-ps-plugin"
-description = ""
+description = "Turn your workflow into a Photoshop plugin."
 version = "1.0.0"
 license = "LICENSE"
 
